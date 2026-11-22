@@ -5,12 +5,12 @@ const glm53 = {
   hardware:"2 台机器 · 每台 8 张 GPU",
   schemeLabel:"Prefill 注意力分片",
   schemes:[{id:"tp",label:"按注意力头切分（TP8）"},{id:"cp",label:"按 token 位置交错切分（CP8）"}],
-  columns:["节点","TP · 整组","DP · 数据","PP · 流水线","CP · 位置","TP · 注意力头","EP · 路由专家","TP · 单个专家","DP Attention"],
+  columns:["节点","TP","DP","PP","CP","注意力 TP","EP","单专家 TP"],
   rows(layout){
    const cp=layout==="cp";
    return [
-    ["Prefill","8","1","1",cp?"8 · 交错":"1",cp?"1 · 64 头/卡":"8 · 8 头/卡","8","1","关"],
-    ["Decode","8","8","1","1","1 · 64 头/卡","1","8","开"]
+    ["Prefill",8,1,1,cp?8:1,cp?1:8,8,1],
+    ["Decode",8,8,1,1,1,1,8]
    ];
   }
  },
