@@ -26,7 +26,7 @@
         " 的 MLA 内容 [2,512] 与位置键 [2,64]，连同索引键汇入 D0；示意逻辑来源。"
       : "TP 注意力各 rank 可访问相同的压缩内容 [16,512] 和位置键 [16,64]。D0 接管本请求；冗余副本的实际发送 rank 由后端决定。";
   original.bridge = "NIXL / UCX · InfiniBand";
-  original.profile = "Dynamo · GLM-5.2 FP8 / H200 PD 配方 · Prefill 按头 TP8 为教学对照";
+  original.profile = "Dynamo + SGLang · H200 · Prefill EP8 / Decode EP1";
   vllm.profile = "vLLM Recipes · GLM-5.3 / 2 × 8 H200 · 双端 TP8、NIXL";
   window.inferenceModels[spec.id] = { SGLang: original, vLLM: vllm };
 }

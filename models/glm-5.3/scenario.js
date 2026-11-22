@@ -4,7 +4,7 @@ const glm53 = {
  parallel:{
   hardware:"2 台机器 · 每台 8 张 GPU",
   schemeLabel:"Prefill 注意力分片",
-  schemes:[{id:"tp",label:"按注意力头切分（TP8）"},{id:"cp",label:"按 token 位置交错切分（CP8）"}],
+  schemes:[{id:"tp",label:"按头切分（TP8）· 每卡 8 头"},{id:"cp",label:"按位置交错切分（CP8）· 每卡 2 个位置"}],
   columns:["节点","TP","DP","PP","CP","注意力 TP","EP","单专家 TP"],
   rows(layout){
    const cp=layout==="cp";
