@@ -1,0 +1,7 @@
+where-tensors-go
+Copyright 2026 where-tensors-go contributors
+
+This project visualizes tensor computation and communication across GPUs
+during large language model inference.
+
+The bundled KaTeX distribution includes its own license in assets/katex/LICENSE.

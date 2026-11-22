@@ -15,6 +15,7 @@
   <a href="https://haoyangping0324.github.io/where-tensors-go/"><img src="./assets/readme/demo.svg" height="24" alt="打开在线演示"></a>
   &nbsp;<img src="./assets/readme/gpu-view.svg" height="24" alt="观察视角：逐卡计算">
   &nbsp;<img src="./assets/readme/communication.svg" height="24" alt="通信演示：逐轮动画">
+  &nbsp;<a href="./LICENSE"><img src="./assets/readme/license.svg" height="24" alt="License: Apache 2.0"></a>
 </p>
 
 <a href="https://haoyangping0324.github.io/where-tensors-go/">
