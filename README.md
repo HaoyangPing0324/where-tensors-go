@@ -7,22 +7,33 @@
 <h1 align="center">看见张量在 GPU 之间流动</h1>
 
 <p align="center">
-  一个交互式大模型推理可视化项目。跟随一次请求，从输入到回复，<br>
-  看每张 GPU 存了什么、算了什么，又把结果交给了谁。
+  <strong>大模型分布式推理的交互式图解</strong><br>
+  跟随一次请求，从输入到回复，看清每张 GPU 上的计算、权重与通信。
 </p>
 
 <p align="center">
   <a href="https://haoyangping0324.github.io/where-tensors-go/"><img src="./assets/readme/demo.svg" height="24" alt="打开在线演示"></a>
-  &nbsp;<img src="./assets/readme/topology.svg" height="24" alt="两台机器，每台八张 GPU">
-  &nbsp;<img src="./assets/readme/phases.svg" height="24" alt="从 Prefill 到 Decode">
+  &nbsp;<img src="./assets/readme/gpu-view.svg" height="24" alt="观察视角：逐卡计算">
+  &nbsp;<img src="./assets/readme/communication.svg" height="24" alt="通信演示：逐轮动画">
 </p>
 
 <a href="https://haoyangping0324.github.io/where-tensors-go/">
-  <img src="./assets/preview.png" width="100%" alt="演示全景：左侧是请求流程，右侧八张 Prefill 卡正在交换张量分块">
+  <img src="./assets/preview.png" width="100%" alt="演示界面全景：左侧展示请求流程，右侧在各张 GPU 内展示张量分块，并用连线标出传输方向">
 </a>
 
-## 🧭 怎样读这张图
+## ✨ 项目特色
 
-- **沿请求走** · 从目录选择一个阶段，或点「下一步」，跟随同一个请求经过 Prefill、KV 交接和 Decode。
-- **往卡里看** · 每张卡的位置固定。点击卡内的数据块，查看本步的张量形状、权重分片和计算结果。
-- **顺着线看** · 通信动画逐轮更新各卡的缓冲区。点击连线，就能看到这一跳的发送卡、接收卡和传输内容。
+**🧭 一条完整的请求路径**<br>
+从聊天请求接入、分词和调度，到 Prefill、KV 缓存交接、Decode 和流式返回，服务端事件与 GPU 计算出现在同一份分层目录里。既能顺着请求看全程，也能直接进入关心的模型层和算子。
+
+**▦ 把算子展开到每张 GPU**<br>
+每张卡在图上都有固定位置。输入张量、常驻权重和输出画在对应卡内，配上矩阵形状、分片范围与计算公式。看一次投影，就能对上本卡读了哪段输入、乘了哪部分权重、留下了什么结果。
+
+**⇄ 看得见的跨卡通信**<br>
+连线标出发送卡与接收卡，点开即可查看传输的张量和维度。集合通信按轮播放，把各卡缓冲区放在一张图里，同时呈现分块怎样传送、累加和复制。
+
+**🧩 保留模型各层的差异**<br>
+演示按模型的实际层结构组织计算。注意力可以展开到查询投影、索引与缓存读写；前馈层可以区分 Dense 与 MoE，继续观察专家路由、专家计算和结果合并。结构相同的层归为一组，方便比较关键差异。
+
+**⚙️ 对照并行配置与数据布局**<br>
+并行参数和逐卡视图联动。以注意力为例，切换按头分片和按位置分片，同一个算子在每张卡上负责的头数、token 位置和矩阵形状会随之变化。GPU 数量及并行度由具体演示场景给出。
