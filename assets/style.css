@@ -36,3 +36,12 @@ nav[hidden]{display:none}#sections,#variants{gap:6px;margin-bottom:8px}#sections
 #parallelConfig tbody th{color:var(--mint)}
 @media(max-width:760px){.parallel .toolbar{align-items:flex-start}.parallel .toolbar span{width:100%;margin-left:0}#parallelConfig th:first-child{position:sticky;left:0;background:#172329}}
 .brand{display:inline-flex;align-items:center}.brand img{width:clamp(155px,28vw,222px);height:auto}
+header:has(.selectors){height:auto;min-height:78px;padding-block:8px}
+.selectors{display:grid;gap:4px}.selectors label{display:flex;gap:8px;align-items:center}
+.selectors select{max-width:100%;padding-block:2px}
+#engineDiff{padding:7px 14px;border-top:1px solid var(--line);font-size:13px}#engineDiff summary{width:fit-content}#comparison p{margin:6px 0}
+
+.transfer{padding:10px 16px;background:#172a32;color:#b3d7eb}.transfer strong{font-size:13px}.transfer .scroll{margin-top:5px}.transfer .wire .path{stroke-width:2;opacity:.8}.selectors{min-width:0}.selectors label select{min-width:0}
+
+#profile{color:var(--sub);font-size:12px}.parallel .toolbar{flex-wrap:wrap}
+@media(max-width:640px){header:has(.selectors){flex-wrap:wrap}.selectors select{max-width:calc(100vw - 100px)}}

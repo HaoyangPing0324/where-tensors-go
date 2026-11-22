@@ -4,7 +4,7 @@ let scene,stage=0,beat=0,timer,serial=0,flows=[];
 const requestCount=1;
 const layout=()=>$("layout").value;
 const layerGroup=()=>scene.layerClasses[Number($("layer").value)||0];
-const allowed=i=>scene.layerAllows(i,layerGroup());
+const allowed=i=>scene.layerAllows(i,layerGroup(),layout());
 const ranks=()=>Array.from({length:scene.ranks},(_,i)=>i);
 function collective(i=stage){
  const op=scene.op(i,layout());
@@ -32,6 +32,19 @@ function ring(op,round){
  return {mem,edges};
 }
 const esc=s=>String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll('"',"&quot;");
+function bridgeView(){
+ const senders=!scene.sharedDecode && layout()==="tp"?[0]:ranks();
+ const links=senders.map(r=>{
+   const dst=scene.sharedDecode?r:0;
+   const payload=scene.transfer?.(r,layerGroup(),layout()) || "MLA 内容与位置键，另含 DSA 索引缓存";
+   const info="P"+r+" → D"+dst+" · 请求 A · "+payload;
+   const sx=gx(r)+64, dx=gx(dst)+64, lane=27+3*r;
+   const d="M"+sx+" 20 V"+lane+" H"+dx+" V62";
+   return '<g class="wire" role="button" tabindex="0" aria-label="'+esc(info)+'" data-info="'+esc(info)+'"><title>'+esc(info)+'</title><path class="hit" d="'+d+'"/><path class="path" d="'+d+'" stroke="'+colors[r]+'"/><path d="M'+(dx-4)+' 56 l4 6 4 -6" fill="none" stroke="'+colors[r]+'"/></g>';
+ }).join("");
+ const labels=ranks().map(r=>txt(gx(r)+51,16,"P"+r,"hint")+txt(gx(r)+51,79,"D"+r,"hint")).join("");
+ return '<section class="transfer"><strong>'+esc(scene.bridge)+' · 逻辑端点</strong><div class="scroll"><svg class="deck" role="group" aria-label="跨节点缓存传输" viewBox="0 0 1160 86">'+labels+links+'</svg></div></section>';
+}
 const txt=(x,y,s,cl="")=>'<text x="'+x+'" y="'+y+'" class="'+cl+'">'+esc(s)+'</text>';
 const gx=r=>8+144*r;
 function slot(x,y,w,h,label,color,tip,sub=""){
@@ -40,17 +53,20 @@ function slot(x,y,w,h,label,color,tip,sub=""){
 function drawNode(side,stage,beat){
  const phase=scene.phase(stage);
  const op=collective(stage), active=!scene.service(stage) && (side===(phase<13?"P":"D")||phase===13);
+ const hidden=scene.hidden||6144, channelBlock=hidden/scene.ranks;
+ const chunk=scene.chunk?.(stage);
+ const shape=chunk?"["+chunk.rows+","+chunk.width+"]":side==="D"?"["+requestCount+","+channelBlock+"]":"["+(requestCount*2)+","+hidden+"]";
  const state=active && op?ring(op,beat):null;
  const weightsY=state?251:active?176:67;
  const h=weightsY+100;
- const group="N"+side, count=requestCount*16;
+ const group="N"+side;
  let cards="",paths="";
  for(const r of ranks()){
-  const x=gx(r), boxes=(active && (side==="P" || r<requestCount) && scene.layerPresentation(stage,layerGroup())?.blocks) || scene.describe(stage,r,side,requestCount,layout());
+  const x=gx(r), boxes=(active && (side==="P" || r<requestCount || scene.sharedDecode) && scene.layerPresentation(stage,layerGroup())?.blocks) || scene.describe(stage,r,side,requestCount,layout(),layerGroup());
   cards+='<rect class="device" x="'+x+'" y="19" width="128" height="'+(h-24)+'" rx="7"/>'+txt(x+7,39,side+r,"rank");
-  const q=String.fromCharCode(65+r);
-  const owner=side==="D" && phase>=13 && r<requestCount && stage!==scene.stages.length-1;
-  const weight=scene.weightView(stage,side,r,layout(),active);
+  const q=scene.sharedDecode?"A":String.fromCharCode(65+r);
+  const owner=side==="D" && phase>=13 && (r<requestCount||scene.sharedDecode) && stage!==scene.stages.length-1;
+  const weight=scene.weightView(stage,side,r,layout(),active,layerGroup());
   cards+='<line x1="'+(x+7)+'" x2="'+(x+121)+'" y1="'+weightsY+'" y2="'+weightsY+'" stroke="#41515b"/>'+txt(x+7,weightsY+18,"常驻权重 · 摘选","hint")+txt(x+7,weightsY+39,weight[0],"weightName")+txt(x+7,weightsY+58,weight[1],"hint");
   cards+=txt(x+7,weightsY+83,owner?(phase===13 && beat<2?"请求 "+q+" · 待交接":"请求 "+q+" · KV 在卡"):(phase>=13 && side==="D"?"无本批 KV":""),"hint");
   if(state){
@@ -58,22 +74,22 @@ function drawNode(side,stage,beat){
     const y=49+k*23;
     if(!orig.length){cards+='<rect x="'+(x+6)+'" y="'+y+'" width="115" height="20" rx="3" fill="#141d22"/>';return;}
     const summed=op!=="ag" && orig.length===8, col=op==="ag"||summed?colors[k]:colors[orig[0]];
-    const shape=side==="D"?"["+requestCount+",768]":"["+(count/8)+",6144]";
-    const desc=side+r+" · B"+k+" "+shape+" · "+(op==="ag"?"复制自 P"+k:"贡献卡 "+orig.map(v=>side+v).join(" + "))+(side==="D"?"。隐藏通道 ["+768*k+","+768*(k+1)+")。":"。B"+k+" 表示位置 "+k+", "+(k+8)+" … 的行。");
-    const embedding=phase===1;
-    const status=summed?"已求和":op==="ag"?"完整块":embedding && !orig.includes(k)?"零":orig.length===1?"本地":"部分和";
-    cards+=slot(x+6,y,115,20,"B"+k+" · "+status,col,desc+(summed?" 八份贡献已合并。":embedding && !orig.includes(k)?" 该块目前只含未命中词表的零贡献。":""));
+    const desc=side+r+" · B"+k+" "+shape+" · "+(op==="ag"?"复制自 "+side+k:"贡献卡 "+orig.map(v=>side+v).join(" + "))+(chunk?"。"+chunk.axis+"区间 ["+k*chunk.width+","+(k+1)*chunk.width+")。":side==="D"?"。隐藏通道 ["+channelBlock*k+","+channelBlock*(k+1)+")。":"。B"+k+" 表示位置 "+k+", "+(k+8)+" … 的行。");
+    const embedding=phase===1 || scene.stages[stage][1]==="合并词向量";
+    const hit=orig.includes(side==="D"?0:k);
+    const status=summed?"已求和":op==="ag"?"完整块":embedding && !hit?"零":orig.length===1?"本地":"部分和";
+    cards+=slot(x+6,y,115,20,"B"+k+" · "+status,col,desc+(summed?" 八份贡献已合并。":embedding && !hit?" 该块目前只含未命中词表的零贡献。":""));
    });
   }else if(active){
    // A single GPU buffer evolves in place: operands coexist for a multiply and are released after it.
-   const waiting=phase===14 && r>=requestCount || phase===13 && side==="D" && r>=requestCount;
+   const waiting=!scene.sharedDecode && side==="D" && (phase===14||phase===13) && r>=requestCount;
    const visible=waiting?[boxes[0]]:beat===0?[boxes[0]]:beat===1?[boxes[0],boxes[1]]:[boxes[2]];
    if(phase===0 && beat!==1)visible.unshift(boxes[1]);
    visible.forEach((item,row)=>{
      const tip=side+r+" · "+item.name+" "+item.value+"。"+item.detail;
      cards+=slot(x+6,51+row*50,115,44,item.name,colors[r],tip,item.value);
    });
-   if(!waiting && beat===1)cards+=txt(x+8,160,scene.stages[stage][2].slice(0,14),"hint");
+   if(!waiting && beat===1)cards+=txt(x+8,160,"↓ "+boxes[2].name,"hint");
   }else cards+=txt(x+7,57,"本步未参与","hint");
  }
  if(state){
@@ -81,7 +97,7 @@ function drawNode(side,stage,beat){
   for(const e of flows){
    const sy=59+e.k*23, sx=gx(e.src)+122, dx=gx(e.dst)+6;
    const p=e.dst!==0?'M'+sx+' '+sy+' H'+dx:'M'+sx+' '+sy+' h9 V10 H3 V'+sy+' H'+dx;
-   const col=colors[e.k], info=side+e.src+" → "+side+e.dst+" · B"+e.k+" "+(side==="D"?"["+requestCount+",768]":"["+(count/8)+",6144]")+" · "+(e.gather?"传完整块，目的卡保留副本":"传部分和，在目的卡逐元素相加");
+   const col=colors[e.k], info=side+e.src+" → "+side+e.dst+" · "+scene.stages[stage][1]+" · B"+e.k+" "+shape+" · "+(e.gather?"传完整块，目的卡保留副本":"传部分和，在目的卡逐元素相加");
    paths+='<g tabindex="0" role="button" class="wire" data-info="'+info+'" aria-label="'+info+'"><title>'+info+'</title><path class="hit" d="'+p+'"/><path class="path" d="'+p+'" stroke="'+col+'"/><path d="M'+(dx-4)+' '+(sy-4)+' l4 4 -4 4" fill="none" stroke="'+col+'"/><circle class="packet" r="3.3" fill="'+col+'"><animateMotion dur="0.85s" path="'+p+'" repeatCount="1" fill="remove"/></circle></g>';
   }
  }
@@ -93,13 +109,14 @@ function drawNode(side,stage,beat){
 function renderParallelConfig(){
  const config=scene.parallel;
  $("hardware").textContent=config.hardware;
+ $("profile").textContent=scene.profile;
  const header=config.columns.map(label=>'<th scope="col">'+esc(label)+'</th>').join("");
  const body=config.rows(layout()).map(([node,...values])=>'<tr><th scope="row">'+esc(node)+'</th>'+values.map(value=>'<td>'+esc(value)+'</td>').join("")+'</tr>').join("");
  $("parallelConfig").innerHTML='<thead><tr>'+header+'</tr></thead><tbody>'+body+'</tbody>';
 }
 let tocKey="", tocStage=-1;
 function renderToc(){
- const key=scene.id+"-"+$("layer").value;
+ const key=scene.id+"-"+layout()+"-"+$("layer").value;
  const nav=$("toc");
  if(key!==tocKey){
    const openBranches=new Set([...nav.querySelectorAll("details[open]")].map(el=>el.dataset.branch));
@@ -185,7 +202,7 @@ function render(){
  const svc=scene.service(stage);
  $("service").hidden=!svc;
  if(svc)$("service").innerHTML='<small>服务端路径</small>'+[svc.from,svc.via,svc.to].map(x=>'<b>'+esc(x)+'</b>').join('<span>→</span>');
- $("map").innerHTML=drawNode("P",stage,beat)+(scene.phase(stage)===13 ? '<div class="bridge">Prefill 缓存池　↓　NIXL / UCX · InfiniBand　↓　Decode 缓存池</div>' : "")+drawNode("D",stage,beat);
+ $("map").innerHTML=drawNode("P",stage,beat)+(scene.phase(stage)===13 ? bridgeView() : "")+drawNode("D",stage,beat);
  $("inspect").hidePopover();
  $("play").hidden=!isCommunication();
  $("prev").disabled=stage===0 && beat===0;$("next").disabled=stage===stages.length-1 && beat===lastBeat();
@@ -206,17 +223,33 @@ function move(dir){
  let target=stage+dir;
  // On the default forward walkthrough, advance from the last dense example to the first MoE layer.
  if(dir>0 && scene.path(stage)[2]==="Dense" && scene.path(target)?.[2]==="MoE"){
-   $("layer").value=scene.layerClasses.findIndex(g=>g.ffn==="MoE" && g.index==="shared");
+   $("layer").value=scene.layerClasses.findIndex(g=>g.ffn==="MoE");
    target=scene.stages.findIndex((s,i)=>scene.path(i)[0]===scene.path(stage)[0] && scene.path(i)[1]==="Attention");
  }
  while(target>=0 && target<scene.stages.length && !allowed(target))target+=dir;
  if(target>=0 && target<scene.stages.length)enter(target,dir>0?0:2);
 }
+const scripts=new Map();
+function loadScript(url){
+ if(!scripts.has(url))scripts.set(url,new Promise((resolve,reject)=>{
+   const tag=document.createElement("script");tag.src=url;tag.onload=resolve;
+   tag.onerror=()=>{scripts.delete(url);reject(Error(url));};document.head.append(tag);
+ }));
+ return scripts.get(url);
+}
 async function loadModel(id){
- const version=++serial,entry=catalog.find(m=>m.id===id);stop();
- if(!window.inferenceModels[id])for(const url of entry.scripts)await new Promise((ok,fail)=>{const script=document.createElement("script");script.onload=ok;script.onerror=fail;script.src=url;document.head.append(script);});
+ const version=++serial,entry=catalog.find(m=>m.id===id);stop();$("engine").disabled=true;
+ for(const url of entry.scripts)await loadScript(url);
  if(version!==serial)return;
- scene=window.inferenceModels[id];stage=beat=0;
+ const variants=window.inferenceModels[id];
+ $("engine").innerHTML=Object.keys(variants).map(name=>'<option>'+esc(name)+'</option>').join("");
+ $("engine").value=entry.defaultEngine;
+ selectEngine();$("engine").disabled=false;
+}
+function selectEngine(){
+ stop();const variants=window.inferenceModels[$("model").value];
+ scene=variants[$("engine").value];stage=beat=0;tocKey="";
+ $("comparison").innerHTML=Object.entries(variants).map(([engine,s])=>'<p><b>'+esc(engine)+'</b>　'+esc(s.profile)+' · '+esc(s.bridge)+'</p>').join("");
  $("layout").innerHTML=scene.parallel.schemes.map(scheme=>'<option value="'+esc(scheme.id)+'">'+esc(scheme.label)+'</option>').join("");
  renderParallelConfig();
  $("layer").innerHTML=scene.layerClasses.map((group,i)=>'<option value="'+i+'">'+group.label+'</option>').join("");
@@ -229,9 +262,10 @@ $("layer").onchange=()=>{
  const target=allowed(stage)?stage:section==="Attention" && allowed(stage+1)?stage+1:match;
  enter(target);
 };
-$("model").onchange=()=>loadModel($("model").value);
+$("engine").onchange=selectEngine;
+$("model").onchange=()=>loadModel($("model").value).catch(error=>{$("title").textContent="场景加载失败："+error.message;});
 
-$("layout").onchange=()=>{renderParallelConfig();enter(stage);};
+$("layout").onchange=()=>{renderParallelConfig();enter(allowed(stage)?stage:0);};
 $("prev").onclick=()=>{stop();move(-1);};$("next").onclick=()=>{stop();move(1);};
 $("play").onclick=()=>enter(stage);
 document.addEventListener("click",e=>{
@@ -248,4 +282,3 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("keydown",e=>{if(e.target.closest("[data-info]") && ["Enter"," "].includes(e.key)){e.preventDefault();e.target.dispatchEvent(new MouseEvent("click",{bubbles:true}));}});
 loadModel(catalog[0].id).catch(()=>{$("title").textContent="模型场景加载失败";});
-
