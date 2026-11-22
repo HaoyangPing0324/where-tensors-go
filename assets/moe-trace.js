@@ -18,6 +18,7 @@ function makeExpertTrace(spec, count) {
 }
 
 const traceSteps = ["Dispatch · 分发", "Expert FFN · 计算", "Combine · 合并"];
+let trace = null;
 let traceStep = 0;
 const traceMode = () => $("moePath").value;
 
@@ -89,7 +90,7 @@ function traceWire(edge, side, step, direct, owners, width, animate) {
     (animate
       ? '<circle class="packet" r="4" fill="' +
         color +
-        '"><animateMotion dur="0.65s" path="' +
+        '"><animateMotion dur="0.4s" path="' +
         path +
         '" fill="freeze"/></circle>'
       : "") +
@@ -261,7 +262,9 @@ function drawTraceNode(side, activeSide) {
   return (
     '<section class="node"><h2>' +
     name +
-    ' <span>路由专家组 · EP 8 · 单专家 TP 1</span></h2><div class="nodeFormula"><div class="mathDisplay">' +
+    " <span>" +
+    esc(traceProfile($("model").value, $("engine").value, trace.phase)) +
+    ' · 单专家 TP 1</span></h2><div class="nodeFormula"><div class="mathDisplay">' +
     katex.renderToString(formula, { displayMode: true }) +
     '</div><span class="mathCaption">' +
     esc(caption + counts) +
@@ -288,12 +291,39 @@ function traceLimit() {
   return traceMode() === "direct" ? 2 : 7;
 }
 
-function startTrace(step) {
+function openTrace(phase) {
+  if (trace?.phase === phase) return;
+  const returnBeat = trace ? trace.returnBeat : beat;
+  trace = { phase, returnBeat, mode: traceMode() };
+  startTrace(traceStep);
+}
+
+function changeTracePath() {
+  if (!trace || traceStep === 1 || trace.mode === traceMode()) return;
+  const oldLimit = trace.mode === "direct" ? 2 : 7;
+  trace.mode = traceMode();
+  const progress =
+    beat === 0 || beat === oldLimit
+      ? beat === 0
+        ? 0
+        : traceLimit()
+      : Math.max(1, Math.min(traceLimit() - 1, Math.round((beat / oldLimit) * traceLimit())));
+  startTrace(traceStep, progress);
+}
+
+function startTrace(step, initial = 0) {
   stop();
   traceStep = step;
-  beat = 0;
+  $("moePath").options[0].textContent = traceStep === 2 ? "AllToAll · 定向回传" : "AllToAll · 定向分发";
+  $("moePath").options[1].textContent = traceStep === 2 ? "ReduceScatter · 求和并归还行" : "AllGather · 汇集输入行";
+  for (const button of $("traceControls").querySelectorAll("[data-trace-step]")) {
+    if (Number(button.dataset.traceStep) === traceStep) button.setAttribute("aria-current", "step");
+    else button.removeAttribute("aria-current");
+  }
+
+  beat = initial;
   $("inspect").hidePopover();
-  if (traceLimit()) {
+  if (beat < traceLimit()) {
     timer = setInterval(() => {
       beat++;
       if (beat >= traceLimit()) stop();
@@ -304,33 +334,22 @@ function startTrace(step) {
 }
 
 function renderTrace() {
-  const side = scene.path(stage)[0] === "Prefill" ? "P" : "D";
+  const side = trace.phase === "Prefill" ? "P" : "D";
   const direct = traceMode() === "direct";
   const ops = direct
     ? ["AllToAll · 按目的卡发送", "Grouped GEMM", "AllToAll · 按来源卡返回"]
     : ["AllGather · 复制 token 行", "Grouped GEMM", "ReduceScatter · 求和并归还行"];
   const timing = direct ? ["初始缓冲区", "交换中", "已到达"][beat] : beat ? "环上第 " + beat + " / 7 跳" : "初始缓冲区";
-  $("title").textContent = traceSteps[traceStep];
+  $("title").textContent = trace.phase + " · " + traceSteps[traceStep];
   $("beat").textContent = ops[traceStep] + (traceStep === 1 ? "" : "　·　" + timing);
   $("ringStages").hidden = true;
   $("service").hidden = true;
   $("play").hidden = traceStep === 1;
   $("play").textContent = "重新播放通信";
-  $("prev").disabled = false;
-  $("next").disabled = false;
+  $("prev").disabled = traceStep === 0;
+  $("next").disabled = traceStep === traceSteps.length - 1;
   const scrollPositions = [...$("map").querySelectorAll(".node .scroll")].map((el) => el.scrollLeft);
-  const steps = traceSteps
-    .map(
-      (s, i) =>
-        '<button data-trace-step="' + i + '"' + (i === traceStep ? ' aria-current="step"' : "") + ">" + s + "</button>",
-    )
-    .join("");
-  $("map").innerHTML =
-    '<div class="traceSteps" aria-label="路由专家步骤">' +
-    steps +
-    "<button data-close-trace>返回当前部署</button></div>" +
-    drawTraceNode("P", side) +
-    drawTraceNode("D", side);
+  $("map").innerHTML = drawTraceNode("P", side) + drawTraceNode("D", side);
   $("map")
     .querySelectorAll(".node .scroll")
     .forEach((el, i) => {
@@ -339,7 +358,5 @@ function renderTrace() {
 }
 
 function closeTrace() {
-  $("moePath").value = "";
-  tocStage = -1;
-  enter(stage);
+  if (trace) enter(stage, trace.returnBeat, true);
 }

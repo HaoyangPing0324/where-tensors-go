@@ -54,7 +54,9 @@ function makeTPScene(m, engine) {
       add(section, title, "AllReduce · SUM", () => [], {
         collective: true,
         ffn,
-        formula: ["Y=\\sum_{r=0}^{7}Y^{(r)}", "按元素合并八份 TP 部分积。"],
+        formula: section === "Embedding"
+          ? ["X=\\sum_{r=0}^{7} X^{(r)}", "每个 token 由持有该词表行的一卡贡献词向量，其余七卡贡献零。"]
+          : ["Y=\\sum_{r=0}^{7}Y^{(r)}", "每卡贡献一个 " + X + " 部分积。求和后，每卡得到相同形状的完整结果。"],
       });
     add("Embedding", "词表分片查表", "Lookup", (r) =>
       rows(
@@ -173,7 +175,7 @@ function makeTPScene(m, engine) {
               ["还原行号 / 系数", shape(T, m.top)],
               ["各 token 部分和", shape(T, E)],
             ),
-          { ffn, formula: ["R_t=\\sum_{e\\in I_t}p_{t,e}F_e(x_t)", "按路由权重合并同一行的专家贡献。"] },
+          { ffn, formula: ["R_t^{(r)}=\\sum_{e\\in I_t}p_{t,e}F_e^{(r)}(x_t)", "每张卡先加权合并本卡的专家 TP 部分积，得到完整通道宽度的部分和。"] },
         );
         if (m.latent)
           add(

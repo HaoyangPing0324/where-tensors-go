@@ -2,7 +2,7 @@ const $=id=>document.getElementById(id);
 const colors=["#9cbbff","#ffc087","#a4dfaf","#d3adf1","#ff9e9d","#7edbd2","#f6d777","#d8acc5"];
 let scene,stage=0,beat=0,timer,serial=0,flows=[];
 const requestCount=1;
-const communicationRoundMs=800;
+const communicationRoundMs=500;
 const layout=()=>$("layout").value;
 const layerGroup=()=>scene.layerClasses[Number($("layer").value)||0];
 const allowed=i=>scene.layerAllows(i,layerGroup(),layout());
@@ -99,7 +99,7 @@ function drawNode(side,stage,beat){
    const sy=59+e.k*23, sx=gx(e.src)+122, dx=gx(e.dst)+6;
    const p=e.dst!==0?'M'+sx+' '+sy+' H'+dx:'M'+sx+' '+sy+' h9 V10 H3 V'+sy+' H'+dx;
    const col=colors[e.k], info=side+e.src+" → "+side+e.dst+" · "+scene.stages[stage][1]+" · B"+e.k+" "+shape+" · "+(e.gather?"传完整块，目的卡保留副本":"传部分和，在目的卡逐元素相加");
-   paths+='<g tabindex="0" role="button" class="wire" data-info="'+info+'" aria-label="'+info+'"><title>'+info+'</title><path class="hit" d="'+p+'"/><path class="path" d="'+p+'" stroke="'+col+'"/><path d="M'+(dx-4)+' '+(sy-4)+' l4 4 -4 4" fill="none" stroke="'+col+'"/><circle class="packet" r="3.3" fill="'+col+'"><animateMotion dur="0.65s" path="'+p+'" repeatCount="1" fill="remove"/></circle></g>';
+   paths+='<g tabindex="0" role="button" class="wire" data-info="'+info+'" aria-label="'+info+'"><title>'+info+'</title><path class="hit" d="'+p+'"/><path class="path" d="'+p+'" stroke="'+col+'"/><path d="M'+(dx-4)+' '+(sy-4)+' l4 4 -4 4" fill="none" stroke="'+col+'"/><circle class="packet" r="3.3" fill="'+col+'"><animateMotion dur="0.4s" path="'+p+'" repeatCount="1" fill="remove"/></circle></g>';
   }
  }
  const equation=active?scene.equation(stage,side,requestCount,layout(),layerGroup()):null;
@@ -107,22 +107,10 @@ function drawNode(side,stage,beat){
  const node=side==="P"?"01 · Prefill":"02 · Decode";
  return '<section class="node"><h2>'+node+'</h2>'+math+'<div class="scroll"><svg class="deck" viewBox="0 0 1160 '+h+'" role="group" aria-label="'+group+' GPU 缓冲区">'+cards+paths+'</svg></div></section>';
 }
-let displayedConfig="";
 function renderParallelConfig(){
- const local=!!traceMode(), phase=scene.path(stage)[0];
- const key=[scene.id,$("engine").value,layout(),traceMode(),local?phase:""].join("/");
- if(key===displayedConfig)return;
- displayedConfig=key;
- const model=scene.moe;
- const config=local ? {
-   hardware: phase+" · 路由专家算子",
-   columns: ["节点","EP","单专家 TP","路由专家","每卡专家","每 token 命中","专家输入维"],
-   rows: ()=>[[phase,8,1,model.experts,model.experts/8,model.top,model.width]],
- } : scene.parallel;
- $("layout").closest("label").hidden=local;
- $("engineDiff").hidden=local;
+ const config=scene.parallel;
  $("hardware").textContent=config.hardware;
- $("profile").textContent=local?traceProfile($("model").value,$("engine").value,phase):scene.profile;
+ $("profile").textContent=scene.profile;
  const header=config.columns.map(label=>'<th scope="col">'+esc(label)+'</th>').join("");
  const body=config.rows(layout()).map(([node,...values])=>'<tr><th scope="row">'+esc(node)+'</th>'+values.map(value=>'<td>'+esc(value)+'</td>').join("")+'</tr>').join("");
  $("parallelConfig").innerHTML='<thead><tr>'+header+'</tr></thead><tbody>'+body+'</tbody>';
@@ -157,8 +145,8 @@ function renderToc(){
      });
      if(path[2]==="MoE" && !parent.querySelector("[data-trace-entry]")){
        const entry=document.createElement("button");
-       entry.dataset.traceEntry=i;
-       entry.textContent="专家通信 · Dispatch / Combine";
+       entry.dataset.traceEntry=path[0];
+       entry.textContent="EP8 通信对照 · Dispatch / Combine";
        parent.append(entry);
      }
      const button=document.createElement("button");button.dataset.step=i;
@@ -167,16 +155,17 @@ function renderToc(){
    });
    tocKey=key;tocStage=-1;
  }
- if(stage!==tocStage){
+ const selected=trace?.phase || stage;
+ if(selected!==tocStage){
    nav.querySelector("[aria-current]")?.removeAttribute("aria-current");
    const base=nav.querySelector('[data-step="'+stage+'"]');
-   const active=traceMode()?base?.parentElement.querySelector("[data-trace-entry]"):base;
+   const active=trace?nav.querySelector('[data-trace-entry="'+trace.phase+'"]'):base;
    if(active){
      active.setAttribute("aria-current","step");
      for(let branch=active.closest("details");branch;branch=branch.parentElement.closest("details"))branch.open=true;
      revealTocStep();
    }
-   tocStage=stage;
+   tocStage=selected;
  }
 }
 function revealTocStep(){
@@ -197,27 +186,23 @@ $("toggleToc").onclick=()=>toggleToc($("toc").hidden);
 toggleToc(!matchMedia("(max-width:760px)").matches);
 $("toc").onclick=e=>{
  const button=e.target.closest("button[data-step],button[data-trace-entry]");if(!button)return;
- const trace=button.hasAttribute("data-trace-entry");
- const i=Number(trace?button.dataset.traceEntry:button.dataset.step);
- if(!allowed(i))$("layer").value=scene.layerClasses.findIndex(g=>g.ffn===scene.path(i)[2]);
- if(trace){
-   stage=i; $("moePath").value="direct";tocStage=-1;startTrace(0);
- }else enter(i);
+ if(button.dataset.traceEntry){
+   openTrace(button.dataset.traceEntry);
+ }else{
+   const i=Number(button.dataset.step);
+   if(!allowed(i))$("layer").value=scene.layerClasses.findIndex(g=>g.ffn===scene.path(i)[2]);
+   enter(i);
+ }
  if(matchMedia("(max-width:760px)").matches){toggleToc(false);$("toggleToc").focus();}
 };
 function render(){
  const stages=scene.stages,s=stages[stage],op=collective();
  const current=scene.path(stage);
- $("layerControl").hidden=!["Attention","FFN"].includes(current[1]);
- $("moeControl").hidden=current[2]!=="MoE";
- if(current[2]==="MoE"){
-   const row=scene.parallel.rows(layout()).find(r=>r[0]===current[0]);
-   const route=row[6]===1?"专家 TP · AllReduce":row[3]===1 && row[4]===8?"AllGather / ReduceScatter":"复制输入 · AllReduce";
-   $("moePath").options[0].textContent="当前部署 · "+route;
- }
- renderParallelConfig();
+ $("layerControl").hidden=!!trace || !["Attention","FFN"].includes(current[1]);
+ $("traceControls").hidden=!trace;
+ $("moeControl").hidden=!trace || traceStep===1;
  renderToc();
- if(traceMode()){renderTrace();return;}
+ if(trace){renderTrace();return;}
  const layerView=scene.layerPresentation(stage,layerGroup());
  $("title").textContent=layerView?.title || s[1];
  const phase=scene.service(stage)?"请求软件路径":op?(beat===0?"初始缓冲区":(op==="ag"||beat>7?"AllGather":"ReduceScatter")+"　轮 "+((beat-1)%7+1)+" / 7") : ["读取","计算 / 搬运","写回"][beat];
@@ -241,17 +226,16 @@ function render(){
 }
 function stop(){clearInterval(timer);timer=null;}
 function isCommunication(){return !!collective();}
-function enter(i,initial=0){
- stop(); if(traceMode()){ $("moePath").value="";tocStage=-1; }
- stage=i;beat=Math.min(initial,lastBeat());
- if(isCommunication()){
-   beat=0;
+function enter(i,initial=0,resume=false){
+ stop(); trace=null; stage=i;
+ beat=isCommunication() && !resume?0:Math.min(initial,lastBeat());
+ if(isCommunication() && beat<lastBeat()){
    timer=setInterval(()=>{beat++;if(beat>=lastBeat())stop();render();},communicationRoundMs);
  }
  render();
 }
 function move(dir){
- if(traceMode()){const target=traceStep+dir;if(target<0 || target>=traceSteps.length)closeTrace();else startTrace(target);return;}
+ if(trace){const target=traceStep+dir;if(target>=0 && target<traceSteps.length)startTrace(target);return;}
  if(!isCommunication() && beat+dir>=0 && beat+dir<=lastBeat()){beat+=dir;render();return;}
  let target=stage+dir;
  // On the default forward walkthrough, advance from the last dense example to the first MoE layer.
@@ -281,30 +265,52 @@ async function loadModel(id){
 }
 function selectEngine(){
  stop();const variants=window.inferenceModels[$("model").value];
- $("moePath").value="";
+ const previous=scene, oldStage=stage, oldBeat=beat, oldLayer=previous && layerGroup(), oldLayout=layout();
  scene=variants[$("engine").value];stage=beat=0;tocKey="";
  $("comparison").innerHTML=Object.entries(variants).map(([engine,s])=>'<p><b>'+esc(engine)+'</b>　'+esc(s.profile)+' · '+esc(s.bridge)+'</p>').join("");
  $("schemeLabel").textContent=scene.parallel.schemeLabel || "部署拓扑";
  $("layout").innerHTML=scene.parallel.schemes.map(scheme=>'<option value="'+esc(scheme.id)+'">'+esc(scheme.label)+'</option>').join("");
+ if(scene.parallel.schemes.some(s=>s.id===oldLayout))$("layout").value=oldLayout;
  renderParallelConfig();
  $("layer").innerHTML=scene.layerClasses.map((group,i)=>'<option value="'+i+'">'+group.label+'</option>').join("");
- render();
+ if(previous){
+   const exact=scene.layerClasses.findIndex(g=>g.label===oldLayer.label);
+   const similar=scene.layerClasses.findIndex(g=>g.ffn===oldLayer.ffn);
+   $("layer").selectedIndex=exact>=0?exact:Math.max(0,similar);
+   const path=previous.path(oldStage), candidates=scene.stages.map((_,i)=>i).filter(i=>allowed(i) && scene.path(i)[0]===path[0]);
+   stage=candidates.find(i=>scene.stages[i][1]===previous.stages[oldStage][1])
+     ?? candidates.find(i=>scene.path(i).join("/")===path.join("/")) ?? candidates[0] ?? 0;
+ }
+ const sameStep=previous && scene.stages[stage][1]===previous.stages[oldStage][1];
+ if(trace){
+   if(!sameStep)trace.returnBeat=0;
+   startTrace(traceStep,oldBeat);
+ }else enter(stage,sameStep?oldBeat:0,true);
 }
 $("model").innerHTML=catalog.map(m=>'<option value="'+m.id+'">'+m.name+'</option>').join("");
 $("layer").onchange=()=>{
  const [phase,section]=scene.path(stage);
  const match=scene.stages.findIndex((s,i)=>scene.path(i)[0]===phase && scene.path(i)[1]===section && allowed(i));
  const target=allowed(stage)?stage:section==="Attention" && allowed(stage+1)?stage+1:match;
- if(traceMode() && scene.path(target)[2]==="MoE"){stage=target;startTrace(traceStep);}else enter(target);
+ enter(target);
 };
 $("engine").onchange=selectEngine;
 $("model").onchange=()=>loadModel($("model").value).catch(error=>{$("title").textContent="场景加载失败："+error.message;});
 
-$("layout").onchange=()=>{renderParallelConfig();enter(allowed(stage)?stage:0);};
+$("layout").onchange=()=>{
+ renderParallelConfig();
+ if(!allowed(stage)){
+   const phase=scene.path(stage)[0];
+   const candidates=scene.stages.map((_,i)=>i).filter(i=>allowed(i) && scene.path(i)[0]===phase);
+   stage=candidates.reduce((best,i)=>Math.abs(i-stage)<Math.abs(best-stage)?i:best,candidates[0] ?? 0);
+   if(trace)trace.returnBeat=0;
+ }
+ if(trace)render();else enter(stage,beat,true);
+};
 $("prev").onclick=()=>{stop();move(-1);};$("next").onclick=()=>{stop();move(1);};
-$("play").onclick=()=>traceMode()?startTrace(traceStep):enter(stage);
-$("moePath").onchange=()=>{tocStage=-1;if(traceMode())startTrace($("map").querySelector(".traceDeck")?traceStep:0);else closeTrace();};
-$("map").addEventListener("click",e=>{
+$("play").onclick=()=>trace?startTrace(traceStep):enter(stage);
+$("moePath").onchange=changeTracePath;
+$("traceControls").addEventListener("click",e=>{
  const step=e.target.closest("[data-trace-step]");
  if(step)startTrace(Number(step.dataset.traceStep));
  else if(e.target.closest("[data-close-trace]"))closeTrace();
@@ -325,7 +331,9 @@ document.addEventListener("click",e=>{
 document.addEventListener("keydown",e=>{if(e.target.closest("[data-info]") && ["Enter"," "].includes(e.key)){e.preventDefault();e.target.dispatchEvent(new MouseEvent("click",{bubbles:true}));}});
 loadModel(catalog[0].id).then(()=>{
  if(location.hash==="#moe"){
-   $("toc").querySelector("[data-trace-entry]")?.click();
+   const first=scene.stages.findIndex((_,i)=>scene.path(i)[0]==="Prefill" && scene.path(i)[2]==="MoE");
+   if(first>=0)$("toc").querySelector('[data-step="'+first+'"]')?.click();
+   openTrace("Prefill");
    $("moeControl").scrollIntoView({block:"start"});
  }
 }).catch(()=>{$("title").textContent="模型场景加载失败";});

@@ -45,7 +45,8 @@ header:has(.selectors){height:auto;min-height:78px;padding-block:8px}
 
 #profile{color:var(--sub);font-size:12px}.parallel .toolbar{flex-wrap:wrap}
 @media(max-width:640px){header:has(.selectors){flex-wrap:wrap}.selectors select{max-width:calc(100vw - 100px)}}
-#moeControl:not([hidden]){display:inline-flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+#moeControl:not([hidden]){display:inline-flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0}
+.traceSteps[hidden]{display:none}
 #moePath{max-width:100%}
 .traceSteps{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line)}
 .traceSteps button{font-size:13px}.traceSteps [aria-current="step"]{background:#294839;color:#d4f7de;border-color:#74c7ab}

@@ -64,7 +64,9 @@
    if(title.includes("Gate 与 Up") || title.includes("专家中间分片"))return [String.raw`G=H W_{\mathrm{gate}},\qquad U=H W_{\mathrm{up}}`,"同一份专家输入分别乘两组权重，生成门控分量与数值分量。"];
    if(title.includes("门控激活"))return [String.raw`M=\operatorname{SiLU}(G)\odot U`,"形状不变，逐元素门控。"];
    if(title.includes("Down 投影") || title.includes("专家输出投影"))return [String.raw`Y_e=M_e W_{\mathrm{down},e}`,"从专家中间维投回 6144 维。按中间维切分时，本卡仅贡献部分积。"];
-   if(title.includes("合并专家输出") || title.includes("合入共享"))return [String.raw`\mathbf y_j=\mathbf x_{\mathrm{res},j}+f_{\mathrm{shared}}(\mathbf h_j)+\sum_{e\in\mathcal E_j} w_{j,e}\, f_e(\mathbf h_j)`,"对选中的 8 个路由专家加权，wₑ 包含路由缩放。"];
+   if(title==="归并 TP 部分积")return [String.raw`Y=\sum_{r=0}^{7}Y^{(r)}`,"每卡的 [1,6144] 是专家 TP 部分积。ReduceScatter 后每卡持有已求和的 [1,768]，AllGather 后每卡都有完整的 [1,6144]。"];
+   if(title==="合并专家输出")return [String.raw`R_j=\sum_{r=0}^7\sum_{e\in E_r\cap I_j}w_{j,e} f_e(h_j)`,layout==="cp"?"ReduceScatter 沿 token 行求和，Pᵣ 留下位置 r 和 r+8。":"AllReduce 求和，每卡都得到 16 行路由专家输出。"];
+   if(title.includes("合入共享"))return [String.raw`\mathbf y_j=\mathbf x_{\mathrm{res},j}+f_{\mathrm{shared}}(\mathbf h_j)+\sum_{e\in\mathcal E_j} w_{j,e}\, f_e(\mathbf h_j)`,"对选中的 8 个路由专家加权，wₑ 包含路由缩放。"];
    return null;
  };
  scene.weightView=(i,side,r,layout,active)=>{
