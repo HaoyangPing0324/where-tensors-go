@@ -46,6 +46,12 @@
    const title=scene.stages[i][1], p=scene.phase(i), d=side==="D";
    const t=d?1:layout==="cp"?2*n:16*n, heads=d||layout==="cp"?64:8;
    const h="["+t+",6144]", latent="["+t+",2048]";
+   if(title==="首个输出 token" || title==="末层归一化与词表投影")return [
+     String.raw`z=\operatorname{RMSNorm}(x_{\rm last})\,W_{\rm head}`,
+     d?"当前行 [1,6144] × 逻辑权重 [6144,154880] → 全词表分数 [1,154880]。":"取提示的最后一行，6144 个通道投影为 154880 个词表分数，再采样首个 ID。"
+   ];
+   if(title==="采样与流式返回")return tokenSamplingEquation;
+   if(title==="读取新 token 与历史 KV")return [String.raw`x_{\rm new}=E[t_{\rm prev},:]`,"用上一轮生成的 ID 查出 6144 维输入，历史 KV 继续留在缓存中。"];
    if(title==="词表分片查表")return [String.raw`\mathbf{x}^{(r)}_j=\begin{cases}E^{(r)}[t_j-a_r,:],& a_r\le t_j<a_{r+1},\\ \mathbf{0},&\text{otherwise}.\end{cases}`,"tⱼ 为 token ID；aᵣ 为本卡词表起始行，命中时取整行 6144 个通道。"];
    if(p===1)return [String.raw`X=\sum_{r=0}^{7}X^{(r)}`,"每个 token 只有一张卡命中；合并后每卡都有 X ["+16*n+",6144]。"];
    if(title==="残差与输入归一化")return [String.raw`\widehat{x}_{j,k}=\frac{\gamma_k\,x_{j,k}}{\sqrt{\dfrac{1}{H}\sum_{\ell=1}^{H}x_{j,\ell}^{\,2}+\varepsilon}},\qquad H=6144`,h+" → "+h+"　每个 token 单独归一化，保留 X 供残差相加。"];
@@ -54,13 +60,17 @@
    if(title.includes("拆出 Q"))return [String.raw`\mathbf q_j=[\,\mathbf q_j^{\mathrm c}\mid\mathbf q_j^{\mathrm p}\,],\qquad \mathbf q_j^{\mathrm R}=\operatorname{RoPE}(\mathbf q_j^{\mathrm p},j)`,"仅旋转每头的 64 维位置分量；192 维内容分量另行投影。"];
    if(title.includes("压缩缓存"))return [String.raw`\mathcal C[j]\gets\bigl[\,\operatorname{RMSNorm}(\mathbf c_{a,j})\mid\operatorname{RoPE}(\mathbf k_{\mathrm{pos},j},j)\,\bigr]`,"每个位置 512 个压缩内容通道 + 64 个位置通道，DSA 的索引缓存另存。"];
    if(title.includes("稀疏地址"))return group.index==="shared"?[String.raw`\mathcal I_j^{(\ell)}=\mathcal I_j^{(\ell-1)}`,"复用候选位置地址，本层仍重新计算注意力。"]:[String.raw`\mathcal I_j=\underset{0\le i\le j}{\operatorname{TopKIndices}}\,s_{j,i},\qquad K=\min(2048,j+1)`,"最多 2048 个位置，受当前请求的因果可见长度限制。"];
+   if(title==="吸收 K 投影，计算候选分数")return [String.raw`S_h=(q_h^{\rm c}W_{\rm KC,h})\,C_{\mathcal I}^{\mathsf T}+q_h^{\rm R}(K_{\mathcal I}^{\rm R})^{\mathsf T}`,"每个候选位置的分数等于内容点积加位置点积。"];
    if(title.includes("吸收 K"))return [String.raw`\widetilde{\mathbf q}_h=\mathbf q_h^{\mathrm c}W_{\mathrm{KC},h}`,"每头 [1,192] × [192,512] → [1,512]，直接与缓存 latent 点积。"];
    if(title.includes("稀疏注意力分数"))return [String.raw`S_h=\widetilde{\mathbf q}_h C_{\mathcal I}^{\mathsf T}+\mathbf q_h^{\mathrm R}\bigl(K_{\mathcal I}^{\mathrm R}\bigr)^{\mathsf T}`,"每个候选位置贡献一个分数；两项分别沿 512 和 64 个通道做点积。"];
-   if(title.includes("Softmax") || title.includes("因果掩码") || title.includes("归一化并聚合"))return [String.raw`A_{h,i}=\frac{\exp(\alpha S_{h,i}+m_i)}{\displaystyle\sum_{u\in\mathcal I}\exp(\alpha S_{h,u}+m_u)},\qquad i\in\mathcal I`,"每个查询头在候选位置上的权重之和为 1。"];
+   if(title.includes("归一化并聚合"))return [String.raw`Z_h=\operatorname{softmax}_{\mathcal I}(\alpha S_h+m)\,C_{\mathcal I}`,"沿候选位置归一化，再加权求和，每头得到一个 512 维向量。"];
+   if(title.includes("Softmax") || title.includes("因果掩码"))return [String.raw`A_{h,i}=\frac{\exp(\alpha S_{h,i}+m_i)}{\displaystyle\sum_{u\in\mathcal I}\exp(\alpha S_{h,u}+m_u)},\qquad i\in\mathcal I`,"每个查询头在候选位置上的权重之和为 1。"];
    if(title.includes("聚合候选 latent"))return [String.raw`Z=A\,C_{\mathcal I}`,"每头 [1,L] × [L,512] → [1,512]，L 为所选位置数。"];
    if(title.includes("恢复各头"))return [String.raw`\mathbf o_h=\mathbf z_h W_{v,b,h}`,"每头 [1,512] × [512,256] → [1,256]。"];
-   if(title.includes("输出投影 W") || title.includes("恢复 value"))return [String.raw`Y^{(r)}=\operatorname{Concat}_{h\in\mathcal H_r}(O_h)\,W_o^{(r)}`,"["+t+","+heads*256+"] × ["+heads*256+",6144] → "+h+"。"];
+   if(title.includes("恢复 value"))return [String.raw`x_{\rm out}=x_{\rm res}+\operatorname{concat}_{h}(Z_h W_{v,b,h})\,W_o`,"64 个头各恢复 256 维，拼接投影到 6144 维后加回残差。"];
+   if(title.includes("输出投影 W"))return [String.raw`Y^{(r)}=\operatorname{Concat}_{h\in\mathcal H_r}(O_h)\,W_o^{(r)}`,"["+t+","+heads*256+"] × ["+heads*256+",6144] → "+h+"。"];
    if(p===7)return [layout==="tp"?String.raw`X_{\mathrm{out}}=X_{\mathrm{res}}+\sum_{r=0}^{7}Y^{(r)}`:String.raw`X_{\mathrm{out}}^{(r)}=X_{\mathrm{res}}^{(r)}+Y^{(r)}`,"TP 的每份 Yᵣ 只包含本卡头的贡献。CP 配置在本卡已得到该行的完整输出。"];
+   if(title==="经过前三个 Dense 层" || title==="前三层的 Dense 前馈")return [String.raw`Y^{(r)}=\bigl[\operatorname{SiLU}(HW_g^{(r)})\odot(HW_u^{(r)})\bigr]W_d^{(r)}`,"H 是归一化输入。每卡计算 1536 个中间通道，再归并八份 Down 部分积。"];
    if(title.includes("Gate 与 Up") || title.includes("专家中间分片"))return [String.raw`G=H W_{\mathrm{gate}},\qquad U=H W_{\mathrm{up}}`,"同一份专家输入分别乘两组权重，生成门控分量与数值分量。"];
    if(title.includes("门控激活"))return [String.raw`M=\operatorname{SiLU}(G)\odot U`,"形状不变，逐元素门控。"];
    if(title.includes("Down 投影") || title.includes("专家输出投影"))return [String.raw`Y_e=M_e W_{\mathrm{down},e}`,"从专家中间维投回 6144 维。按中间维切分时，本卡仅贡献部分积。"];

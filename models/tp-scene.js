@@ -1,3 +1,8 @@
+const tokenSamplingEquation = [
+  String.raw`p=\operatorname{softmax}(z/\tau),\qquad t_{\rm next}\sim\operatorname{Categorical}(p)`,
+  "以温度采样为例，τ > 0。按概率抽取一个词表 ID。",
+];
+
 // TP-only, one P and one D worker. Shapes below describe logical GEMMs, independent of fusion.
 function makeTPScene(m, engine) {
   const v = engine === "vLLM",
@@ -68,6 +73,10 @@ function makeTPScene(m, engine) {
         ],
         ["局部词向量", X, "命中本卡词表时读取对应行，其余位置贡献零。"],
       ),
+      { formula: [
+        String.raw`x_j^{(r)}=\begin{cases}E^{(r)}[t_j-a_r,:],&a_r\le t_j<a_{r+1}\\ \mathbf 0,&\text{otherwise}\end{cases}`,
+        "命中本卡时，用 token ID 减去起始 ID，读出该行的 " + H + " 个通道。",
+      ] },
     );
     reduce("Embedding", "合并词向量");
     const context = { add, projection, reduce, rows, shape, H, T, X, P };
@@ -137,7 +146,7 @@ function makeTPScene(m, engine) {
           "投影到路由专家空间",
           "LatentMoE",
           () => rows(["完整输入", X], ["下降投影", shape(H, E)], ["路由空间", shape(T, E)]),
-          { ffn },
+          { ffn, formula: [String.raw`U=XW_{\rm in}`, "每个路由 token 从 " + H + " 维投影到 " + E + " 维。"] },
         );
       add(
         "FFN",
@@ -162,7 +171,10 @@ function makeTPScene(m, engine) {
         "Down 投影",
         "GEMM",
         () => rows(["本地激活", shape(N, W)], ["Wdown", shape(W, E)], ["局部贡献", shape(N, E)]),
-        { ffn },
+        { ffn, formula: [
+          String.raw`Y^{(r)}=M^{(r)}W_{\rm down}^{(r)}`,
+          "本卡的 " + W + " 个中间通道贡献一个 " + E + " 维部分积。",
+        ] },
       );
       if (moe) {
         add(
@@ -183,7 +195,7 @@ function makeTPScene(m, engine) {
             "投回主干隐藏维",
             "LatentMoE",
             () => rows(["低维部分和", shape(T, E)], ["上升投影", shape(E, H)], ["主干部分和", X]),
-            { ffn },
+            { ffn, formula: [String.raw`Y^{(r)}=R^{(r)}W_{\rm out}`, "将加权后的 " + E + " 维专家贡献投回主干的 " + H + " 维。"] },
           );
         add(
           "FFN",
@@ -216,24 +228,37 @@ function makeTPScene(m, engine) {
         { ffn },
       );
     }
+    m.beforeHead?.(context);
     add("输出", "取末位置并投影到词表", "LM head", (r) =>
       rows(
         ["末行 RMSNorm", shape(1, H)],
         [
           "Whead",
           shape(H, m.vocab / 8),
-          "词表行区间 [" + (r * m.vocab) / 8 + "," + ((r + 1) * m.vocab) / 8 + ")",
+          "列对应词表 ID [" + (r * m.vocab) / 8 + "," + ((r + 1) * m.vocab) / 8 + ")。隐藏向量与其中一列点积，得到该 ID 的分数。",
         ],
         ["局部 logits", shape(1, m.vocab / 8)],
       ),
+      { formula: [
+        String.raw`z^{(r)}=h_{\rm last}\,W_{\rm head}^{(r)}`,
+        (P ? "取最后一个提示位置" : "取当前新位置") + "归一化后的 " + H + " 维向量，本卡算出 " + m.vocab / 8 + " 个词表分数。",
+      ] },
     );
-    add("输出", "汇集词表分片", "AllGather · logits", () => [], { collective: true, vocab: true });
+    add("输出", "汇集词表分片", "AllGather · logits", () => [], {
+      collective: true,
+      vocab: true,
+      formula: [
+        String.raw`z=\operatorname{concat}_{\rm vocab}\!\left(z^{(0)},\ldots,z^{(7)}\right)`,
+        "按词表 ID 顺序拼接，每卡得到全部 " + m.vocab + " 个分数。",
+      ],
+    });
     add("输出", "从完整词表采样", "Sample", () =>
       rows(
         ["完整 logits", shape(1, m.vocab)],
         ["采样分布", "归一化词表分数"],
         ["本轮输出", "1 个 token ID", "各 rank 逻辑上共用同一采样结果。"],
       ),
+      { formula: tokenSamplingEquation },
     );
     if (!P) m.decodeTail?.(context);
     if (P) {

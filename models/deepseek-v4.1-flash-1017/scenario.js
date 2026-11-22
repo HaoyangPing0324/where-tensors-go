@@ -19,6 +19,15 @@
     },
     transfer: () =>
       "各层滑窗 [16,512]；层 2、8、14 的压缩源 [8,512] 和层 20 的源 [16,512]，以及索引键和续算状态（列逻辑形状）。",
+    beforeHead({ add, rows, shape, T, H, X }) {
+      add("输出", "合并末层的四路残差", "mHC", () =>
+        rows(["末层残差", shape(T, 4, H)], ["读出系数", shape(T, 4)], ["主干隐藏态", X]),
+        { formula: [
+          String.raw`h_j=\sum_{s=1}^{4}a_{j,s}\,R_{j,s}`,
+          "每个位置用末层给出的四个系数，将四路残差合成一个 5120 维向量。",
+        ] },
+      );
+    },
     beforeAttention({ add, rows, shape, T, H, X }) {
       add(
         "Attention",

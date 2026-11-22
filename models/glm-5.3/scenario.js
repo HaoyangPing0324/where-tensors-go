@@ -133,7 +133,7 @@ window.inferenceModels[glm53.id]=glm53;
  add(team,"Down 投影与专家部分和","GEMM","本卡中间维乘本卡的 Down 权重分片。按路由系数加权，形成待归并的部分积。",()=>[["中间激活","[1,256]"],["Wdown","[256,6144]"],["专家部分积","[1,6144]"]]);
  add(team,"归并 TP 部分积","AllReduce · SUM","按 SUM 的等价环形实现演示。此处每个 B 块覆盖 768 个隐藏通道，含本批所有请求行。实际归并可与布局转换融合。",()=>[],"AllReduce · SUM");
  add(local,"合并分支并进入下一层","Residual","归并后将本请求的路由分支、共享分支与残差合成。上述层结构重复到第 78 层。",()=>[["路由结果","[1,6144]"],["共享分支","shared(h)"],["下一层输入","[1,6144]"]]);
- add(local,"末层归一化与词表投影","LM head","完成全部层后得到当前行的逻辑词表 logits；这里折叠最后投影的物理布局。",()=>[["末层状态","[1,6144]"],["RMSNorm","6144 个通道"],["逻辑 logits","[1,154880]"]]);
+ add(local,"末层归一化与词表投影","LM head","完成全部层后得到当前行的逻辑词表 logits；这里折叠最后投影的物理布局。",()=>[["末行 RMSNorm","[1,6144]"],["逻辑 Whead","[6144,154880]"],["逻辑 logits","[1,154880]"]]);
  add(local,"采样与流式返回","Sample","采样一个 token ID，经服务端解码为文本。尚未遇到停止条件时，下一轮复用已增长的 KV，再走一遍模型。",()=>[["词表分数","154880"],["采样结果","1 个 token ID"],["请求端","文本片段"]]);
  glm53.stages.splice(first,Infinity,...steps.map(s=>["Decode",s.title,s.operation,s.detail]));
  glm53.phase=i=>i<first?previousPhase(i):steps[i-first].phase;

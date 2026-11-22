@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const { readFileSync } = require("node:fs");
 const { resolve } = require("node:path");
 const vm = require("node:vm");
+const katex = require("../assets/katex/katex.min.js");
 
 const runtime = vm.createContext({ window: {} });
 function load(file) {
@@ -84,6 +85,20 @@ for (const entry of catalog) {
   }
   for (const variant of Object.values(variants)) {
     for (const layout of variant.parallel.schemes) {
+      const group = variant.layerClasses[0];
+      for (const [phase, side] of [["Prefill", "P"], ["Decode", "D"]]) {
+        const outputs = variant.stages.flatMap((step, i) =>
+          variant.path(i)[0] === phase && variant.path(i)[1] === "输出" &&
+          variant.layerAllows(i, group, layout.id) && ["LM head", "LM head / Sample", "AllGather · logits", "Sample"].includes(step[2])
+            ? [i] : []);
+        assert.ok(outputs.some(i => variant.stages[i][2].includes("LM head")));
+        assert.ok(outputs.some(i => variant.stages[i][2].includes("Sample")));
+        for (const i of outputs) {
+          const [tex, caption] = variant.equation(i, side, 1, layout.id, group);
+          assert.ok(caption, variant.stages[i][1]);
+          assert.match(katex.renderToString(tex, {throwOnError:true}), /class="katex"/);
+        }
+      }
       for (const layer of variant.layerClasses) {
         for (const [i] of variant.stages.entries()) {
           if (
