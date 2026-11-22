@@ -87,3 +87,23 @@ for (const entry of catalog) {
   }
   console.log("PASS", entry.name);
 }
+
+load("assets/moe-trace.js");
+const {makeExpertTrace, traceEdges} = runtime;
+for (const entry of catalog) {
+  for (const scene of Object.values(runtime.window.inferenceModels[entry.id])) {
+    const owners = makeExpertTrace(scene.moe, scene.ranks);
+    const ids = owners.flatMap(owner => owner.ids);
+    assert.equal(new Set(ids).size, scene.moe.top);
+    for (const {ids, first, last} of owners) assert.ok(ids.every(id => id >= first && id <= last));
+    const outgoing = traceEdges("direct", 0, owners);
+    assert.equal(outgoing.length, owners.filter(o => o.rank && o.ids.length).length);
+    assert.deepEqual(outgoing.map(e => [e.dst,e.src]), traceEdges("direct", 2, owners).map(e => [e.src,e.dst]));
+    for (const step of [0,2]) {
+      const hops = traceEdges("gather", step, owners);
+      assert.equal(hops.length, 7);
+      assert.equal(step === 0 ? hops[0].src : hops[6].dst, 0);
+      assert.ok(hops.slice(1).every((edge,i) => edge.src === hops[i].dst));
+    }
+  }
+}

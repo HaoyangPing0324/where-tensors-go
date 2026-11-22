@@ -282,6 +282,7 @@ function makeTPScene(m, engine) {
     ranks: 8,
     hidden: m.hidden,
     sharedDecode: true,
+    moe: { experts: m.experts, top: m.top, width: m.latent || H, hidden: H, middle: m.middle, activation: m.activation },
     bridge,
     layerClasses: m.layers,
     transfer:

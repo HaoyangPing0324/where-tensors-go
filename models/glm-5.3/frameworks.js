@@ -15,6 +15,7 @@
     index: true,
   };
   const vllm = makeTPScene(spec, "vLLM");
+  original.moe = vllm.moe;
   original.transfer = (r, g, l) =>
     l === "cp"
       ? "P" +

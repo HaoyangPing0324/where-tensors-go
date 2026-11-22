@@ -107,10 +107,22 @@ function drawNode(side,stage,beat){
  const node=side==="P"?"01 · Prefill":"02 · Decode";
  return '<section class="node"><h2>'+node+'</h2>'+math+'<div class="scroll"><svg class="deck" viewBox="0 0 1160 '+h+'" role="group" aria-label="'+group+' GPU 缓冲区">'+cards+paths+'</svg></div></section>';
 }
+let displayedConfig="";
 function renderParallelConfig(){
- const config=scene.parallel;
+ const local=!!traceMode(), phase=scene.path(stage)[0];
+ const key=[scene.id,$("engine").value,layout(),traceMode(),local?phase:""].join("/");
+ if(key===displayedConfig)return;
+ displayedConfig=key;
+ const model=scene.moe;
+ const config=local ? {
+   hardware: phase+" · 路由专家算子",
+   columns: ["节点","EP","单专家 TP","路由专家","每卡专家","每 token 命中","专家输入维"],
+   rows: ()=>[[phase,8,1,model.experts,model.experts/8,model.top,model.width]],
+ } : scene.parallel;
+ $("layout").closest("label").hidden=local;
+ $("engineDiff").hidden=local;
  $("hardware").textContent=config.hardware;
- $("profile").textContent=scene.profile;
+ $("profile").textContent=local?traceProfile($("model").value,$("engine").value,phase):scene.profile;
  const header=config.columns.map(label=>'<th scope="col">'+esc(label)+'</th>').join("");
  const body=config.rows(layout()).map(([node,...values])=>'<tr><th scope="row">'+esc(node)+'</th>'+values.map(value=>'<td>'+esc(value)+'</td>').join("")+'</tr>').join("");
  $("parallelConfig").innerHTML='<thead><tr>'+header+'</tr></thead><tbody>'+body+'</tbody>';
@@ -143,6 +155,12 @@ function renderToc(){
        }
        parent=branch;
      });
+     if(path[2]==="MoE" && !parent.querySelector("[data-trace-entry]")){
+       const entry=document.createElement("button");
+       entry.dataset.traceEntry=i;
+       entry.textContent="专家通信 · Dispatch / Combine";
+       parent.append(entry);
+     }
      const button=document.createElement("button");button.dataset.step=i;
      button.textContent=scene.layerPresentation(i,layerGroup())?.title || item[1];
      parent.append(button);
@@ -151,7 +169,8 @@ function renderToc(){
  }
  if(stage!==tocStage){
    nav.querySelector("[aria-current]")?.removeAttribute("aria-current");
-   const active=nav.querySelector('[data-step="'+stage+'"]');
+   const base=nav.querySelector('[data-step="'+stage+'"]');
+   const active=traceMode()?base?.parentElement.querySelector("[data-trace-entry]"):base;
    if(active){
      active.setAttribute("aria-current","step");
      for(let branch=active.closest("details");branch;branch=branch.parentElement.closest("details"))branch.open=true;
@@ -177,17 +196,28 @@ function toggleToc(open){
 $("toggleToc").onclick=()=>toggleToc($("toc").hidden);
 toggleToc(!matchMedia("(max-width:760px)").matches);
 $("toc").onclick=e=>{
- const button=e.target.closest("button[data-step]");if(!button)return;
- const i=Number(button.dataset.step);
+ const button=e.target.closest("button[data-step],button[data-trace-entry]");if(!button)return;
+ const trace=button.hasAttribute("data-trace-entry");
+ const i=Number(trace?button.dataset.traceEntry:button.dataset.step);
  if(!allowed(i))$("layer").value=scene.layerClasses.findIndex(g=>g.ffn===scene.path(i)[2]);
- enter(i);
+ if(trace){
+   stage=i; $("moePath").value="direct";tocStage=-1;startTrace(0);
+ }else enter(i);
  if(matchMedia("(max-width:760px)").matches){toggleToc(false);$("toggleToc").focus();}
 };
 function render(){
  const stages=scene.stages,s=stages[stage],op=collective();
  const current=scene.path(stage);
  $("layerControl").hidden=!["Attention","FFN"].includes(current[1]);
+ $("moeControl").hidden=current[2]!=="MoE";
+ if(current[2]==="MoE"){
+   const row=scene.parallel.rows(layout()).find(r=>r[0]===current[0]);
+   const route=row[6]===1?"专家 TP · AllReduce":row[3]===1 && row[4]===8?"AllGather / ReduceScatter":"复制输入 · AllReduce";
+   $("moePath").options[0].textContent="当前部署 · "+route;
+ }
+ renderParallelConfig();
  renderToc();
+ if(traceMode()){renderTrace();return;}
  const layerView=scene.layerPresentation(stage,layerGroup());
  $("title").textContent=layerView?.title || s[1];
  const phase=scene.service(stage)?"请求软件路径":op?(beat===0?"初始缓冲区":(op==="ag"||beat>7?"AllGather":"ReduceScatter")+"　轮 "+((beat-1)%7+1)+" / 7") : ["读取","计算 / 搬运","写回"][beat];
@@ -212,7 +242,8 @@ function render(){
 function stop(){clearInterval(timer);timer=null;}
 function isCommunication(){return !!collective();}
 function enter(i,initial=0){
- stop(); stage=i;beat=Math.min(initial,lastBeat());
+ stop(); if(traceMode()){ $("moePath").value="";tocStage=-1; }
+ stage=i;beat=Math.min(initial,lastBeat());
  if(isCommunication()){
    beat=0;
    timer=setInterval(()=>{beat++;if(beat>=lastBeat())stop();render();},communicationRoundMs);
@@ -220,6 +251,7 @@ function enter(i,initial=0){
  render();
 }
 function move(dir){
+ if(traceMode()){const target=traceStep+dir;if(target<0 || target>=traceSteps.length)closeTrace();else startTrace(target);return;}
  if(!isCommunication() && beat+dir>=0 && beat+dir<=lastBeat()){beat+=dir;render();return;}
  let target=stage+dir;
  // On the default forward walkthrough, advance from the last dense example to the first MoE layer.
@@ -249,6 +281,7 @@ async function loadModel(id){
 }
 function selectEngine(){
  stop();const variants=window.inferenceModels[$("model").value];
+ $("moePath").value="";
  scene=variants[$("engine").value];stage=beat=0;tocKey="";
  $("comparison").innerHTML=Object.entries(variants).map(([engine,s])=>'<p><b>'+esc(engine)+'</b>　'+esc(s.profile)+' · '+esc(s.bridge)+'</p>').join("");
  $("schemeLabel").textContent=scene.parallel.schemeLabel || "部署拓扑";
@@ -262,14 +295,21 @@ $("layer").onchange=()=>{
  const [phase,section]=scene.path(stage);
  const match=scene.stages.findIndex((s,i)=>scene.path(i)[0]===phase && scene.path(i)[1]===section && allowed(i));
  const target=allowed(stage)?stage:section==="Attention" && allowed(stage+1)?stage+1:match;
- enter(target);
+ if(traceMode() && scene.path(target)[2]==="MoE"){stage=target;startTrace(traceStep);}else enter(target);
 };
 $("engine").onchange=selectEngine;
 $("model").onchange=()=>loadModel($("model").value).catch(error=>{$("title").textContent="场景加载失败："+error.message;});
 
 $("layout").onchange=()=>{renderParallelConfig();enter(allowed(stage)?stage:0);};
 $("prev").onclick=()=>{stop();move(-1);};$("next").onclick=()=>{stop();move(1);};
-$("play").onclick=()=>enter(stage);
+$("play").onclick=()=>traceMode()?startTrace(traceStep):enter(stage);
+$("moePath").onchange=()=>{tocStage=-1;if(traceMode())startTrace($("map").querySelector(".traceDeck")?traceStep:0);else closeTrace();};
+$("map").addEventListener("click",e=>{
+ const step=e.target.closest("[data-trace-step]");
+ if(step)startTrace(Number(step.dataset.traceStep));
+ else if(e.target.closest("[data-close-trace]"))closeTrace();
+});
+
 document.addEventListener("click",e=>{
  const tile=e.target.closest("[data-info]");
  if(tile){
@@ -283,4 +323,9 @@ document.addEventListener("click",e=>{
  }
 });
 document.addEventListener("keydown",e=>{if(e.target.closest("[data-info]") && ["Enter"," "].includes(e.key)){e.preventDefault();e.target.dispatchEvent(new MouseEvent("click",{bubbles:true}));}});
-loadModel(catalog[0].id).catch(()=>{$("title").textContent="模型场景加载失败";});
+loadModel(catalog[0].id).then(()=>{
+ if(location.hash==="#moe"){
+   $("toc").querySelector("[data-trace-entry]")?.click();
+   $("moeControl").scrollIntoView({block:"start"});
+ }
+}).catch(()=>{$("title").textContent="模型场景加载失败";});
