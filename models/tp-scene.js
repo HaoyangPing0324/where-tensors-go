@@ -293,6 +293,7 @@ function makeTPScene(m, engine) {
         : "SGLang · TP8/TP8 教学配置 · Mooncake · 普通文本解码"),
     parallel: {
       hardware: "2 台机器 · 各 8 张卡",
+      schemeLabel: m.schemeLabel,
       schemes: m.schemes || [{ id: "tp", label: "1P1D · 双端 TP8" }],
       columns: ["节点", "TP", "DP", "PP", "CP", "注意力 TP", "EP", "单专家 TP"],
       rows: () => ["Prefill", "Decode"].map((p) => [p, 8, 1, 1, 1, 8, 1, 8]),

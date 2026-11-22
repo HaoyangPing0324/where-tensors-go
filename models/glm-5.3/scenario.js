@@ -3,7 +3,8 @@ const glm53 = {
  id:"glm-5.3", name:"GLM-5.3", ranks:8,
  parallel:{
   hardware:"2 台机器 · 每台 8 张 GPU",
-  schemes:[{id:"tp",label:"按注意力头分片 · 教学对照"},{id:"cp",label:"按提示位置分片 · 配方示意"}],
+  schemeLabel:"Prefill 注意力分片",
+  schemes:[{id:"tp",label:"按注意力头切分（TP8）"},{id:"cp",label:"按 token 位置交错切分（CP8）"}],
   columns:["节点","TP · 整组","DP · 数据","PP · 流水线","CP · 位置","TP · 注意力头","EP · 路由专家","TP · 单个专家","DP Attention"],
   rows(layout){
    const cp=layout==="cp";

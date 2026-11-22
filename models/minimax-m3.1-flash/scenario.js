@@ -13,9 +13,10 @@
     ],
     activation: ["M=g\\,\\sigma(1.702g)\\odot(u+1)", "g 为上限 7 的 gate，u 为裁剪至 [−7,7] 的 up。"],
     cache: "GQA KV / 索引 K",
+    schemeLabel: "解码方式",
     schemes: [
-      { id: "tp", label: "双端 TP8 · 普通解码" },
-      { id: "draft", label: "双端 TP8 · 展开 DSpark 验证示例" },
+      { id: "tp", label: "逐 token 解码" },
+      { id: "draft", label: "DSpark 推测解码" },
     ],
     profile: {
       SGLang: "官方支持 PD 与 DSpark；图示对称 TP8 教学分片",

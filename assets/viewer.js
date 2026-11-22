@@ -250,6 +250,7 @@ function selectEngine(){
  stop();const variants=window.inferenceModels[$("model").value];
  scene=variants[$("engine").value];stage=beat=0;tocKey="";
  $("comparison").innerHTML=Object.entries(variants).map(([engine,s])=>'<p><b>'+esc(engine)+'</b>　'+esc(s.profile)+' · '+esc(s.bridge)+'</p>').join("");
+ $("schemeLabel").textContent=scene.parallel.schemeLabel || "部署拓扑";
  $("layout").innerHTML=scene.parallel.schemes.map(scheme=>'<option value="'+esc(scheme.id)+'">'+esc(scheme.label)+'</option>').join("");
  renderParallelConfig();
  $("layer").innerHTML=scene.layerClasses.map((group,i)=>'<option value="'+i+'">'+group.label+'</option>').join("");
