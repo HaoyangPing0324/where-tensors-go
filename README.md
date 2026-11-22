@@ -1,33 +1,38 @@
 <p align="center">
-  <a href="https://haoyangping0324.github.io/where-tensors-go/"><img src="./assets/wordmark.png" width="420" alt="where-tensors-go"></a>
+  <a href="https://haoyangping0324.github.io/where-tensors-go/">
+    <img src="./assets/wordmark.png" width="440" alt="where-tensors-go">
+  </a>
 </p>
 
-<h1 align="center">一次推理，逐卡看</h1>
+<h1 align="center">大模型推理，逐卡可视化</h1>
+
 <p align="center">
-  Follow one request across GPUs, from prompt to response.<br>
-  <a href="https://haoyangping0324.github.io/where-tensors-go/"><strong>打开交互演示 ↗</strong></a>
+  跟随一次请求，看张量如何穿过模型，在 GPU 之间流动。<br>
+  <em>A visual walkthrough of LLM inference, one GPU at a time.</em>
 </p>
 
-输入一条消息，到屏幕上出现回复，中间的张量去了哪里？**where-tensors-go** 把一次大模型推理展开在两台机器、十六张 GPU 上。每张卡在图里的位置固定。沿请求向前一步，就能看到哪些数据留在原处，哪些参与了矩阵乘法，哪些被送到了另一张卡。
+<p align="center">
+  <a href="https://haoyangping0324.github.io/where-tensors-go/"><strong>打开在线演示 ↗</strong></a>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="https://github.com/HaoyangPing0324/where-tensors-go/archive/refs/heads/main.zip">下载离线版 ↓</a>
+</p>
 
-<a href="https://haoyangping0324.github.io/where-tensors-go/"><img src="./assets/preview.png" alt="Prefill 的八张 GPU 正在合并查表结果。AllGather 第五轮结束，每张卡已有六个完整块。"></a>
+---
 
-## 在图上能看到什么？
+一条消息发出去，直到回复出现在屏幕上，两台机器里的十六张 GPU 各自做了什么？**where-tensors-go** 把这段过程画成一张可以逐步翻看的 GPU 图。每张卡的位置固定，卡内的数据块随计算更新，卡间的连线显示张量的去向。
 
-| 想弄明白的问题 | 在哪里看 |
-| --- | --- |
-| **这次矩阵乘法，每张卡到底算哪部分？** | 打开 **Prefill → Attention → 展开 Q**，对照本卡的输入、权重切片与输出形状。切换按头或按位置分片，观察同一个投影怎样分到八张卡。 |
-| **一条通信连线里传的是什么？** | 打开 **Prefill → Embedding → 合并查表结果**，点击箭头查看源卡、目的卡、张量分块及维度。每过一轮，缓冲区都会更新。 |
-| **Prefill 算完以后，Decode 从哪里接着算？** | 打开 **PD 交接 → KV 缓存传输**，看缓存从哪一端交给哪一端。再进入 **Decode → Attention**，看新位置的查询怎样使用之前的 KV。 |
+<p align="center">
+  <a href="https://haoyangping0324.github.io/where-tensors-go/">
+    <img src="./assets/preview.png" width="100%" alt="演示界面预览：左侧为请求流程目录，右侧按 GPU 展示张量分块与跨卡通信">
+  </a>
+</p>
 
-## 跟一个分块走完 AllReduce
+<table>
+  <tr>
+    <td width="33%" valign="top"><strong>请求的全程</strong><br><br>从接入、Prefill 到 KV 交接、Decode 和流式返回，沿着同一个请求前进。</td>
+    <td width="33%" valign="top"><strong>每张卡的分工</strong><br><br>并排查看各卡持有的权重与张量，比较不同并行方案怎样分配同一项计算。</td>
+    <td width="33%" valign="top"><strong>数据的去向</strong><br><br>让通信逐轮播放，点一条连线，就能看到哪张卡把多大的张量发给了谁。</td>
+  </tr>
+</table>
 
-八张卡各持一段词表。一个 token ID 只会在其中一张卡上查到词向量，其余七张卡为该位置填零。下图中，**每列是一张 GPU，每行是一个张量分块**。只读第一行 B0，就能跟住同一份数据。
-
-![八卡 AllReduce 的六个时刻，从本地查表、分块求和，到将完整结果复制到每张卡](./assets/embedding-allreduce.png)
-
-在这个 16-token 示例里，B0 装着第 0 和第 8 个位置的词向量，形状为 `[2, 6144]`。**ReduceScatter** 结束时，P0 收齐 B0 的八份贡献。接着 **AllGather** 把求和结果沿环复制：先从 P0 到 P1，第五轮结束已有六张卡持有 B0，第七轮结束八张卡全部拿到。其余七个分块也同时沿环传递，最终每张卡都拼齐 `[16, 6144]` 的输入矩阵。
-
-演示中的模型维度取自公开配置，token、专家命中和通信轮次采用教学示例。下载仓库后，用浏览器打开 `index.html` 即可离线浏览。
-
-[模型配置](https://huggingface.co/zai-org/GLM-5.3/blob/main/config.json) · [PD 分离配方](https://github.com/ai-dynamo/dynamo/blob/v1.6.1/recipes/glm-5.2/sglang/disagg-h200-agentic/deploy.yaml) · [通信交互参考 · InferFlux](https://abatom.github.io/inferflux/collective-3d.html)
+<p align="center"><sub>演示可直接在浏览器中运行。离线使用时，解压下载包并打开 index.html 即可。</sub></p>
