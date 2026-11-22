@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/png" href="assets/mark.png"><title>where-tensors-go</title><link rel="stylesheet" href="assets/katex/katex.min.css"><link rel="stylesheet" href="assets/style.css">
+<header><strong class="brand"><img src="assets/wordmark.png" width="222" height="35" alt="where-tensors-go"></strong><label>模型 <select id="model"></select></label></header>
+<main><section class="parallel" aria-label="并行配置"><div class="toolbar"><label>并行方案 <select id="layout"></select></label><span id="hardware"></span></div><div class="configScroll" tabindex="0" role="region" aria-label="两节点并行参数"><table id="parallelConfig"></table></div></section>
+<div id="workspace"><aside id="sidebar"><nav id="toc" aria-label="步骤目录"></nav></aside><div class="content"><label id="layerControl" hidden>层结构（从 0 编号） <select id="layer"></select></label>
+<section class="console"><div class="heading"><div><h1 id="title"></h1></div></div>
+<div class="controls"><button id="toggleToc" aria-expanded="true" aria-controls="toc">收起目录</button><button id="prev">上一步</button><button id="next">下一步</button><span id="beat"></span></div>
+<div id="ringStages" hidden></div><div class="commtools"><button id="play" hidden>重新播放通信</button></div><div id="service" hidden></div><div id="map"></div><div id="inspect" popover="auto" aria-live="polite"></div></section>
+</div></div></main><script src="assets/katex/katex.min.js"></script><script src="models/catalog.js"></script><script src="assets/viewer.js"></script></html>
