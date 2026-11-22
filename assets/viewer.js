@@ -332,8 +332,10 @@ document.addEventListener("keydown",e=>{if(e.target.closest("[data-info]") && ["
 loadModel(catalog[0].id).then(()=>{
  if(location.hash==="#moe"){
    const first=scene.stages.findIndex((_,i)=>scene.path(i)[0]==="Prefill" && scene.path(i)[2]==="MoE");
-   if(first>=0)$("toc").querySelector('[data-step="'+first+'"]')?.click();
-   openTrace("Prefill");
-   $("moeControl").scrollIntoView({block:"start"});
+   if(first>=0){
+     $("layer").selectedIndex=scene.layerClasses.findIndex(g=>g.ffn==="MoE");
+     stage=first;
+     openTrace("Prefill");
+   }
  }
 }).catch(()=>{$("title").textContent="模型场景加载失败";});
