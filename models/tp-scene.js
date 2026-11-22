@@ -119,7 +119,7 @@ function makeTPScene(m, engine) {
           () =>
             rows(
               ["输入行", X],
-              ["专家分数", shape(T, m.experts)],
+              ["专家分数", shape(T, m.experts), m.router],
               [
                 "命中专家",
                 m.top + " 路 + 1 共享",
@@ -141,12 +141,12 @@ function makeTPScene(m, engine) {
         );
       add(
         "FFN",
-        "Gate / Up 与门控激活",
-        "SwiGLU",
+        m.relu2 ? "Up 投影与平方 ReLU" : "Gate / Up 与门控激活",
+        m.relu2 ? "ReLU²" : "SwiGLU",
         (r) =>
           rows(
             ["输入", shape(N, E)],
-            ["Wgate / Wup", shape(E, W), "中间维区间 [" + r * W + "," + (r + 1) * W + ")"],
+            [m.relu2 ? "Wup" : "Wgate / Wup", shape(E, W), "中间维区间 [" + r * W + "," + (r + 1) * W + ")"],
             ["本地激活", shape(N, W)],
           ),
         {
@@ -192,7 +192,7 @@ function makeTPScene(m, engine) {
           () =>
             rows(
               ["主干输入", X],
-              ["Gate / Up 切片", shape(H, (m.sharedMiddle || m.middle) / 8)],
+              [m.relu2 ? "Wup · ReLU²" : "Gate / Up 切片", shape(H, (m.sharedMiddle || m.middle) / 8)],
               [
                 "Down 局部贡献",
                 X,
@@ -218,7 +218,7 @@ function makeTPScene(m, engine) {
     }
     add("输出", "取末位置并投影到词表", "LM head", (r) =>
       rows(
-        ["末位置 · RMSNorm", shape(1, H)],
+        ["末行 RMSNorm", shape(1, H)],
         [
           "Whead",
           shape(H, m.vocab / 8),
@@ -284,11 +284,12 @@ function makeTPScene(m, engine) {
     ranks: 8,
     hidden: m.hidden,
     sharedDecode: true,
-    moe: { experts: m.experts, top: m.top, width: m.latent || H, hidden: H, middle: m.middle, activation: m.activation },
+    moe: { experts: m.experts, top: m.top, width: m.latent || H, hidden: H, middle: m.middle, relu2: m.relu2, activation: m.activation },
     bridge,
     layerClasses: m.layers,
+    cacheBlocks: m.cacheBlocks,
     transfer:
-      m.transfer || (() => "MLA latent [16,512]、RoPE key [16,64]" + (m.index ? "，另含 DSA 索引缓存" : "")),
+      m.transfer || (m.cacheBlocks && (r=>m.cacheBlocks(r).map(b=>b.name+" "+b.shape+"。"+b.detail).join(" "))) || (() => "MLA latent [16,512]、RoPE key [16,64]" + (m.index ? "，另含 DSA 索引缓存" : "")),
     profile:
       m.profile?.[engine] ||
       (v
@@ -316,6 +317,7 @@ function makeTPScene(m, engine) {
     op: (i) => (events[i].collective ? events[i].op : ""),
     layerAllows: (i, g, l) =>
       !!events[i] &&
+      (events[i].path[1] !== "Attention" || !m.attentionWhen || m.attentionWhen(g)) &&
       (!events[i].scheme || events[i].scheme === l) &&
       (!events[i].ffn || events[i].ffn === g.ffn) &&
       (!events[i].when || events[i].when(g)),

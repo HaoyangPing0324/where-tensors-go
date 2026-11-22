@@ -98,10 +98,10 @@
         (r, g) =>
           rows(
             ["本卡查询", shape(T, 8, dim)],
-            ["有效历史", g.mode === "window" ? "滑窗，含 sink" : "滑窗 + 压缩候选，含 sink"],
+            ["有效历史", g.mode === "window" ? "滑窗，含 sink" : "滑窗 + 压缩候选", "与注意力 sink 一同归一化。"],
             ["每头输出", shape(T, 8, 512)],
           ),
-        { formula: ["O=\\operatorname{softmax}(S)V", "按可见位置归一化；展示逻辑运算。"] },
+        { formula: [String.raw`O_h=\frac{\sum_{i\in I}e^{s_{hi}}v_i}{e^{b_h}+\sum_{i\in I}e^{s_{hi}}}`, "I 为查询可见的位置，s 为缩放分数。每头的 sink 偏置只参与分母。"] },
       );
       add("Attention", "逆旋转输出的位置通道", "Inverse RoPE", () =>
         rows(["注意力输出", shape(T, 8, 512)], ["末 64 通道", "逆向 RoPE"], ["分组输入", shape(T, 4096)]),

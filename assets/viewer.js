@@ -35,16 +35,20 @@ function ring(op,round){
 const esc=s=>String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll('"',"&quot;");
 function bridgeView(){
  const senders=!scene.sharedDecode && layout()==="tp"?[0]:ranks();
- const links=senders.map(r=>{
+ const links=senders.flatMap(r=>{
    const dst=scene.sharedDecode?r:0;
-   const payload=scene.transfer?.(r,layerGroup(),layout()) || "MLA 内容与位置键，另含 DSA 索引缓存";
-   const info="P"+r+" → D"+dst+" · 请求 A · "+payload;
-   const sx=gx(r)+64, dx=gx(dst)+64, lane=27+3*r;
-   const d="M"+sx+" 20 V"+lane+" H"+dx+" V62";
-   return '<g class="wire" role="button" tabindex="0" aria-label="'+esc(info)+'" data-info="'+esc(info)+'"><title>'+esc(info)+'</title><path class="hit" d="'+d+'"/><path class="path" d="'+d+'" stroke="'+colors[r]+'"/><path d="M'+(dx-4)+' 56 l4 6 4 -6" fill="none" stroke="'+colors[r]+'"/></g>';
+   const blocks=scene.cacheBlocks?.(r);
+   const payloads=blocks?blocks.map(b=>b.name+" "+b.shape+"。"+b.detail):[scene.transfer?.(r,layerGroup(),layout()) || "MLA 内容与位置键，另含 DSA 索引缓存"];
+   return payloads.map((payload,k)=>{
+     const info="P"+r+" → D"+dst+" · 请求 A · "+payload;
+     const offset=64+(k-(payloads.length-1)/2)*32, color=colors[blocks?k:r];
+     const sx=gx(r)+offset, dx=gx(dst)+offset, lane=27+3*r;
+     const d="M"+sx+" 20 V"+lane+" H"+dx+" V62";
+     return '<g class="wire" role="button" tabindex="0" aria-label="'+esc(info)+'" data-info="'+esc(info)+'"><title>'+esc(info)+'</title><path class="hit" d="'+d+'"/><path class="path" d="'+d+'" stroke="'+color+'"/><path d="M'+(dx-4)+' 56 l4 6 4 -6" fill="none" stroke="'+color+'"/></g>';
+   });
  }).join("");
  const labels=ranks().map(r=>txt(gx(r)+51,16,"P"+r,"hint")+txt(gx(r)+51,79,"D"+r,"hint")).join("");
- return '<section class="transfer"><strong>'+esc(scene.bridge)+' · 逻辑端点</strong><div class="scroll"><svg class="deck" role="group" aria-label="跨节点缓存传输" viewBox="0 0 1160 86">'+labels+links+'</svg></div></section>';
+ return '<section class="transfer"><strong>'+esc(scene.bridge)+(scene.cacheBlocks?' · 每卡从左至右为递归状态、卷积历史、K/V':' · 逻辑端点')+'</strong><div class="scroll"><svg class="deck" role="group" aria-label="跨节点缓存传输" viewBox="0 0 1160 86">'+labels+links+'</svg></div></section>';
 }
 const txt=(x,y,s,cl="")=>'<text x="'+x+'" y="'+y+'" class="'+cl+'">'+esc(s)+'</text>';
 const gx=r=>8+144*r;
@@ -58,7 +62,8 @@ function drawNode(side,stage,beat){
  const chunk=scene.chunk?.(stage);
  const shape=chunk?"["+chunk.rows+","+chunk.width+"]":side==="D"?"["+requestCount+","+channelBlock+"]":"["+(requestCount*2)+","+hidden+"]";
  const state=active && op?ring(op,beat):null;
- const weightsY=state?251:active?176:67;
+ const hybridTransfer=phase===13 && scene.cacheBlocks;
+ const weightsY=hybridTransfer?205:state?251:active?176:67;
  const h=weightsY+100;
  const group="N"+side;
  let cards="",paths="";
@@ -69,7 +74,9 @@ function drawNode(side,stage,beat){
   const owner=side==="D" && phase>=13 && (r<requestCount||scene.sharedDecode) && stage!==scene.stages.length-1;
   const weight=scene.weightView(stage,side,r,layout(),active,layerGroup());
   cards+='<line x1="'+(x+7)+'" x2="'+(x+121)+'" y1="'+weightsY+'" y2="'+weightsY+'" stroke="#41515b"/>'+txt(x+7,weightsY+18,"常驻权重 · 摘选","hint")+txt(x+7,weightsY+39,weight[0],"weightName")+txt(x+7,weightsY+58,weight[1],"hint");
-  cards+=txt(x+7,weightsY+83,owner?(phase===13 && beat<2?"请求 "+q+" · 待交接":"请求 "+q+" · KV 在卡"):(phase>=13 && side==="D"?"无本批 KV":""),"hint");
+  let status=owner?(phase===13 && beat<2?"请求 "+q+" · 待交接":"请求 "+q+" · KV 在卡"):(phase>=13 && side==="D"?"无本批 KV":"");
+  if(hybridTransfer)status=side==="P"?"请求 A · 源缓存可读":["目标槽已分配","请求 A · 接收中","请求 A · 已接收"][beat];
+  cards+=txt(x+7,weightsY+83,status,"hint");
   if(state){
    state.mem[r].forEach((orig,k)=>{
     const y=49+k*23;
@@ -80,6 +87,11 @@ function drawNode(side,stage,beat){
     const hit=orig.includes(side==="D"?0:k);
     const status=summed?"已求和":op==="ag"?"完整块":embedding && !hit?"零":orig.length===1?"本地":"部分和";
     cards+=slot(x+6,y,115,20,"B"+k+" · "+status,col,desc+(summed?" 八份贡献已合并。":embedding && !hit?" 该块目前只含未命中词表的零贡献。":""));
+   });
+  }else if(hybridTransfer){
+   scene.cacheBlocks(r).forEach((b,k)=>{
+    const tip=side+r+" · "+(side==="P"?"源缓存":"目的缓存")+" · "+b.name+" "+b.shape+"。"+b.detail;
+    cards+=slot(x+6,50+48*k,115,42,b.name,side==="D" && beat===0?"#73848a":colors[k],tip,b.shape);
    });
   }else if(active){
    // A single GPU buffer evolves in place: operands coexist for a multiply and are released after it.
@@ -198,7 +210,7 @@ $("toc").onclick=e=>{
 function render(){
  const stages=scene.stages,s=stages[stage],op=collective();
  const current=scene.path(stage);
- $("layerControl").hidden=!!trace || !["Attention","FFN"].includes(current[1]);
+ $("layerControl").hidden=!!trace || !["Attention","Mamba-2","FFN"].includes(current[1]);
  $("traceControls").hidden=!trace;
  $("moeControl").hidden=!trace || traceStep===1;
  renderToc();
@@ -219,7 +231,6 @@ function render(){
  $("service").hidden=!svc;
  if(svc)$("service").innerHTML='<small>服务端路径</small>'+[svc.from,svc.via,svc.to].map(x=>'<b>'+esc(x)+'</b>').join('<span>→</span>');
  $("map").innerHTML=drawNode("P",stage,beat)+(scene.phase(stage)===13 ? bridgeView() : "")+drawNode("D",stage,beat);
- $("inspect").hidePopover();
  $("play").hidden=!isCommunication();
  $("prev").disabled=stage===0 && beat===0;$("next").disabled=stage===stages.length-1 && beat===lastBeat();
  $("play").textContent="重新播放通信";
@@ -227,7 +238,7 @@ function render(){
 function stop(){clearInterval(timer);timer=null;}
 function isCommunication(){return !!collective();}
 function enter(i,initial=0,resume=false){
- stop(); trace=null; stage=i;
+ stop(); $("inspect").hidePopover(); trace=null; stage=i;
  beat=isCommunication() && !resume?0:Math.min(initial,lastBeat());
  if(isCommunication() && beat<lastBeat()){
    timer=setInterval(()=>{beat++;if(beat>=lastBeat())stop();render();},communicationRoundMs);
@@ -272,7 +283,7 @@ function selectEngine(){
  $("layout").innerHTML=scene.parallel.schemes.map(scheme=>'<option value="'+esc(scheme.id)+'">'+esc(scheme.label)+'</option>').join("");
  if(scene.parallel.schemes.some(s=>s.id===oldLayout))$("layout").value=oldLayout;
  renderParallelConfig();
- $("layer").innerHTML=scene.layerClasses.map((group,i)=>'<option value="'+i+'">'+group.label+'</option>').join("");
+ $("layer").innerHTML=scene.layerClasses.map((group,i)=>'<option value="'+i+'" title="'+esc(group.detail || group.label)+'">'+esc(group.label)+'</option>').join("");
  if(previous){
    const exact=scene.layerClasses.findIndex(g=>g.label===oldLayer.label);
    const similar=scene.layerClasses.findIndex(g=>g.ffn===oldLayer.ffn);
@@ -291,8 +302,10 @@ $("model").innerHTML=catalog.map(m=>'<option value="'+m.id+'">'+m.name+'</option
 $("layer").onchange=()=>{
  const [phase,section]=scene.path(stage);
  const match=scene.stages.findIndex((s,i)=>scene.path(i)[0]===phase && scene.path(i)[1]===section && allowed(i));
- const target=allowed(stage)?stage:section==="Attention" && allowed(stage+1)?stage+1:match;
- enter(target);
+ const nextInSection=scene.path(stage+1)?.[1]===section && allowed(stage+1);
+ const target=allowed(stage)?stage:nextInSection?stage+1:match;
+ const samePhase=scene.stages.findIndex((_,i)=>scene.path(i)[0]===phase && scene.path(i)[1]==="Mamba-2" && allowed(i));
+ enter(target>=0?target:samePhase>=0?samePhase:0);
 };
 $("engine").onchange=selectEngine;
 $("model").onchange=()=>loadModel($("model").value).catch(error=>{$("title").textContent="场景加载失败："+error.message;});
@@ -329,7 +342,9 @@ document.addEventListener("click",e=>{
  }
 });
 document.addEventListener("keydown",e=>{if(e.target.closest("[data-info]") && ["Enter"," "].includes(e.key)){e.preventDefault();e.target.dispatchEvent(new MouseEvent("click",{bubbles:true}));}});
-loadModel(catalog[0].id).then(()=>{
+const requestedModel=new URLSearchParams(location.search).get("model");
+$("model").value=catalog.find(m=>m.id===requestedModel)?.id || catalog[0].id;
+loadModel($("model").value).then(()=>{
  if(location.hash==="#moe"){
    const first=scene.stages.findIndex((_,i)=>scene.path(i)[0]==="Prefill" && scene.path(i)[2]==="MoE");
    if(first>=0){

@@ -10,7 +10,7 @@ function load(file) {
 load("models/catalog.js");
 load("models/tp-scene.js");
 const catalog = vm.runInContext("catalog", runtime);
-assert.equal(catalog.length, 6);
+assert.equal(catalog.length, 8);
 
 function output(scene, title, group, rank = 0) {
   const stage = scene.stages.findIndex(
@@ -32,6 +32,23 @@ for (const entry of catalog) {
       break;
     case "deepseek-v4.1-flash-1017":
       assert.equal(output(scene, "分组低秩输出投影", group), "[16,1024]");
+      break;
+    case "nemotron-3-super": {
+      const pair = scene.layerClasses.find(g => !g.gqa);
+      const attention = scene.stages.findIndex(s => s[1] === "全注意力输出投影");
+      assert.equal(scene.layerAllows(attention, pair, "tp"), false);
+      assert.equal(output(scene, "扫描提示序列的 SSM 状态", pair), "[16,64,128]");
+      assert.equal(output(scene, "全注意力输出投影", group), "[16,4096]");
+      assert.equal(output(scene, "Up 投影与平方 ReLU", group), "[mₑ,336]");
+      assert.equal(scene.moe.top, 22);
+      assert.match(scene.transfer(7), /112–127/);
+      break;
+    }
+    case "qwen3.5-397b-a17b":
+      assert.equal(output(scene, "扫描 Gated DeltaNet 状态", group), "[8,128,128]");
+      assert.equal(output(scene, "头内归一化、RoPE 与缓存写入", scene.layerClasses.find(g=>g.full)), "[16,1,256]");
+      assert.equal(scene.moe.top, 10);
+      assert.match(scene.transfer(7), /56–63/);
       break;
     case "kimi-k2.6":
       assert.equal(output(scene, "恢复各头 value", group), "[16,8,128]");
@@ -76,7 +93,7 @@ for (const entry of catalog) {
           )
             continue;
           const side = variant.phase(i) < 13 ? "P" : "D";
-          for (const r of [0, 7]) {
+          for (let r=0; r<variant.ranks; r++) {
             const blocks = variant.describe(i, r, side, 1, layout.id, layer);
             assert.equal(blocks.length, 3, [variant.id, i, r].join("/"));
             assert.doesNotMatch(JSON.stringify(blocks), /NaN|undefined|Infinity/);
@@ -96,6 +113,14 @@ for (const entry of catalog) {
     const ids = owners.flatMap(owner => owner.ids);
     assert.equal(new Set(ids).size, scene.moe.top);
     for (const {ids, first, last} of owners) assert.ok(ids.every(id => id >= first && id <= last));
+    // Give each routed expert a distinct nonzero contribution and reconstruct A at its source.
+    const values = owners.map(owner => owner.ids.reduce((sum,id) => sum + id + 1, 0));
+    const expected = ids.reduce((sum,id) => sum + id + 1, 0);
+    for (const mode of ["direct","gather"]) {
+      const buffers = [...values];
+      for(const edge of traceEdges(mode,2,owners)) buffers[edge.dst] += buffers[edge.src];
+      assert.equal(buffers[0], expected);
+    }
     const outgoing = traceEdges("direct", 0, owners);
     assert.equal(outgoing.length, owners.filter(o => o.rank && o.ids.length).length);
     assert.deepEqual(outgoing.map(e => [e.dst,e.src]), traceEdges("direct", 2, owners).map(e => [e.src,e.dst]));

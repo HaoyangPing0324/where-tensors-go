@@ -8,9 +8,9 @@ function makeExpertTrace(spec, count) {
     last: (rank + 1) * perRank - 1,
     ids: [],
   }));
-  if (!Number.isInteger(perRank) || count !== 8 || spec.top > placements.length)
-    throw Error("缺少此专家拓扑的路由示例");
-  for (const rank of placements.slice(0, spec.top)) {
+  if (!Number.isInteger(perRank) || count !== 8 || spec.top > spec.experts) throw Error("缺少此专家拓扑的路由示例");
+  for (let i = 0; i < spec.top; i++) {
+    const rank = i < placements.length ? placements[i] : (i - placements.length) % count;
     const owner = owners[rank];
     owner.ids.push(owner.first + ((3 + owner.ids.length * 5) % perRank));
   }
@@ -129,7 +129,7 @@ function traceBoard(side, spec, owners, mode, step, tick) {
     cards += txt(x + 8, 53, "E" + first + "–" + end + " 常驻", "hint");
     cards += box(
       66,
-      matched ? idsLabel : "未命中专家",
+      matched ? (ids.length > 2 ? "E" + ids[0] + " 等 " + ids.length + " 个" : idsLabel) : "未命中专家",
       matched ? "命中 " + ids.length + " 个专家" : "A 的贡献为 0",
       "路由结果示例。" +
         (idsLabel || "此卡没有命中的专家") +
@@ -137,20 +137,34 @@ function traceBoard(side, spec, owners, mode, step, tick) {
         first +
         "–E" +
         end +
-        " 的完整 Gate、Up、Down 权重。",
+        (spec.relu2 ? " 的完整 Up、Down 权重。" : " 的完整 Gate、Up、Down 权重。"),
     );
     if (compute && matched) {
       cards += box(
         113,
-        "Gate / Up",
-        "各 [1," + m + "]",
-        "每个命中专家分别读取 xₐ " + vec + "，乘 Wgate 和 Wup，各 [" + w + "," + m + "]。",
+        spec.relu2 ? "Up · ReLU²" : "Gate / Up",
+        (spec.relu2 ? "" : "各 ") + "[1," + m + "]",
+        "每个命中专家分别读取 xₐ " +
+          vec +
+          (spec.relu2 ? "，乘 Wup [" : "，乘 Wgate 和 Wup，各 [") +
+          w +
+          "," +
+          m +
+          "]。",
       );
       cards += box(
         158,
         "激活 → Down",
         vec,
-        "门控激活 [1," + m + "] 乘 Wdown [" + m + "," + w + "]，得到每个专家输出 " + vec + "。",
+        (spec.relu2 ? "平方 ReLU 激活 [1," : "门控激活 [1,") +
+          m +
+          "] 乘 Wdown [" +
+          m +
+          "," +
+          w +
+          "]，得到每个专家输出 " +
+          vec +
+          "。",
       );
       cards += txt(x + 8, 225, "本卡加权求和 s" + rank, "hint");
     } else if (dispatch || compute) {
@@ -219,7 +233,9 @@ function traceFormula(spec, step) {
     ];
   if (step === 1)
     return [
-      String.raw`G=x_AW_{g,e},\ U=x_AW_{u,e},\quad f_e(x_A)=\phi(G,U)W_{d,e}`,
+      spec.relu2
+        ? String.raw`f_e(x_A)=\operatorname{ReLU}(x_AW_{u,e})^2W_{d,e}`
+        : String.raw`G=x_AW_{g,e},\ U=x_AW_{u,e},\quad f_e(x_A)=\phi(G,U)W_{d,e}`,
       spec.activation?.[1] || "每个命中专家计算 φ(G,U) = SiLU(G) ⊙ U。点矩阵块查看输入、权重和输出形状。",
     ];
   return [

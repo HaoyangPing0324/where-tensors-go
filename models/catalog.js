@@ -25,5 +25,7 @@ const catalog = [
     defaultEngine: "SGLang",
     scripts: ["models/qwen3.8-flash-next/scenario.js"],
   },
+  { id: "nemotron-3-super", name: "Nemotron 3 Super 120B-A12B", defaultEngine: "vLLM", scripts: ["models/nemotron-3-super/scenario.js"] },
+  { id: "qwen3.5-397b-a17b", name: "Qwen3.5-397B-A17B", defaultEngine: "vLLM", scripts: ["models/qwen3.5-397b-a17b/scenario.js"] },
 ];
 window.inferenceModels = {};
