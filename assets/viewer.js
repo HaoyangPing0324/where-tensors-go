@@ -2,6 +2,7 @@ const $=id=>document.getElementById(id);
 const colors=["#9cbbff","#ffc087","#a4dfaf","#d3adf1","#ff9e9d","#7edbd2","#f6d777","#d8acc5"];
 let scene,stage=0,beat=0,timer,serial=0,flows=[];
 const requestCount=1;
+const communicationRoundMs=800;
 const layout=()=>$("layout").value;
 const layerGroup=()=>scene.layerClasses[Number($("layer").value)||0];
 const allowed=i=>scene.layerAllows(i,layerGroup(),layout());
@@ -98,7 +99,7 @@ function drawNode(side,stage,beat){
    const sy=59+e.k*23, sx=gx(e.src)+122, dx=gx(e.dst)+6;
    const p=e.dst!==0?'M'+sx+' '+sy+' H'+dx:'M'+sx+' '+sy+' h9 V10 H3 V'+sy+' H'+dx;
    const col=colors[e.k], info=side+e.src+" → "+side+e.dst+" · "+scene.stages[stage][1]+" · B"+e.k+" "+shape+" · "+(e.gather?"传完整块，目的卡保留副本":"传部分和，在目的卡逐元素相加");
-   paths+='<g tabindex="0" role="button" class="wire" data-info="'+info+'" aria-label="'+info+'"><title>'+info+'</title><path class="hit" d="'+p+'"/><path class="path" d="'+p+'" stroke="'+col+'"/><path d="M'+(dx-4)+' '+(sy-4)+' l4 4 -4 4" fill="none" stroke="'+col+'"/><circle class="packet" r="3.3" fill="'+col+'"><animateMotion dur="0.85s" path="'+p+'" repeatCount="1" fill="remove"/></circle></g>';
+   paths+='<g tabindex="0" role="button" class="wire" data-info="'+info+'" aria-label="'+info+'"><title>'+info+'</title><path class="hit" d="'+p+'"/><path class="path" d="'+p+'" stroke="'+col+'"/><path d="M'+(dx-4)+' '+(sy-4)+' l4 4 -4 4" fill="none" stroke="'+col+'"/><circle class="packet" r="3.3" fill="'+col+'"><animateMotion dur="0.65s" path="'+p+'" repeatCount="1" fill="remove"/></circle></g>';
   }
  }
  const equation=active?scene.equation(stage,side,requestCount,layout(),layerGroup()):null;
@@ -214,7 +215,7 @@ function enter(i,initial=0){
  stop(); stage=i;beat=Math.min(initial,lastBeat());
  if(isCommunication()){
    beat=0;
-   timer=setInterval(()=>{beat++;if(beat>=lastBeat())stop();render();},2000);
+   timer=setInterval(()=>{beat++;if(beat>=lastBeat())stop();render();},communicationRoundMs);
  }
  render();
 }
